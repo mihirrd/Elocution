@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>American Accent Coach</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">◉</span>
+      <div>
+        <h1>American Accent Coach</h1>
+        <p class="sub">Record yourself, see exactly which sounds were off, and learn the General American pronunciation.</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="model-status" class="status loading">Loading speech models…</div>
+      <label class="toggle" title="Show the International Phonetic Alphabet used by linguists and dictionaries">
+        <input type="checkbox" id="toggle-ipa"> Show IPA symbols
+      </label>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="practice">Practice a sentence</button>
+    <button class="tab" data-tab="free">Free speech</button>
+    <button class="tab" data-tab="lookup">Pronunciation lookup</button>
+  </nav>
+
+  <main>
+    <!-- Practice / free speech share the recorder -->
+    <section id="record-panel" class="panel">
+      <div id="practice-controls">
+        <label class="label">Choose a focus</label>
+        <div id="focus-chips" class="chips"></div>
+        <label class="label" for="target">Sentence to say</label>
+        <div class="target-row">
+          <textarea id="target" rows="2" spellcheck="false"></textarea>
+          <button id="btn-listen-target" class="ghost" title="Hear an American voice say it">🔊 Listen</button>
+        </div>
+        <div id="target-ipa" class="ipa-line"></div>
+        <p class="how-to-read">How to read: <strong>CAPS</strong> = the stressed part (say it louder and longer). Hyphens split syllables.</p>
+      </div>
+      <div id="free-controls" hidden>
+        <p class="hint">Say anything you like: introduce yourself, describe your day, read a paragraph. The coach works out which words you meant, then checks how you pronounced each one.</p>
+      </div>
+
+      <div class="recorder">
+        <button id="btn-record" class="record" aria-label="Start recording"><span class="dot"></span></button>
+        <div class="rec-info">
+          <div id="rec-state">Press to record</div>
+          <div id="rec-timer" class="timer">0:00</div>
+        </div>
+        <audio id="playback" controls hidden></audio>
+      </div>
+      <div id="error" class="error" hidden></div>
+    </section>
+
+    <section id="results" class="panel" hidden>
+      <div class="results-head">
+        <div class="score-ring" id="score-ring"><span id="score">0</span></div>
+        <div class="results-summary">
+          <h2 id="verdict"></h2>
+          <div class="heard-row"><span class="label-inline">What a listener understood:</span> <em id="transcript"></em></div>
+          <div class="legend">
+            <span class="lg good">good</span><span class="lg fair">needs work</span><span class="lg poor">mispronounced</span><span class="lg unknown">not in dictionary</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="word-chips" class="word-chips"></div>
+      <p class="hint small">Click a word to see the correct pronunciation, what you said, and how to fix it.</p>
+
+      <div id="word-detail" class="word-detail" hidden></div>
+
+      <div id="patterns-box" hidden>
+        <h3>Your recurring mistakes</h3>
+        <ul id="patterns" class="patterns"></ul>
+      </div>
+
+      <details class="raw">
+        <summary>Whole sentence: correct vs. what you said</summary>
+        <div><span class="label-inline">Say it like:</span> <strong id="expected-respelling"></strong></div>
+        <div><span class="label-inline">You said:</span> <span id="heard-respelling"></span></div>
+        <div class="ipa-only"><span class="label-inline">Correct (IPA):</span> <span id="expected-ipa" class="ipa"></span></div>
+        <div class="ipa-only"><span class="label-inline">You said (IPA):</span> <span id="heard-ipa" class="ipa"></span></div>
+      </details>
+    </section>
+
+    <section id="lookup-panel" class="panel" hidden>
+      <label class="label" for="lookup-input">Type any word or sentence</label>
+      <form id="lookup-form" class="lookup-row">
+        <input id="lookup-input" placeholder="e.g. comfortable, vegetable, world, thirty" autocomplete="off">
+        <button type="submit">Show pronunciation</button>
+      </form>
+      <div id="lookup-results"></div>
+    </section>
+  </main>
+
+  <footer>
+    Phoneme recognition: wav2vec2 (espeak phonemes) · Transcription: Whisper · Dictionary: CMUdict. Everything runs locally.
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
