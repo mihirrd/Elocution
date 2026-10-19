@@ -141,6 +141,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .issues { margin: 0; padding-left: 0; list-style: none; }
 .issues li { padding: 8px 10px; border-left: 3px solid var(--poor); background: var(--panel); border-radius: 6px; margin-bottom: 6px; }
 .issues li.accent { border-left-color: var(--fair); }
+.issues li.possible { border-left-color: var(--unknown); color: var(--muted); }
+.maybe { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; background: var(--unknown-soft); padding: 1px 6px; border-radius: 99px; margin-right: 4px; }
 .notes { color: var(--muted); font-size: 14px; padding-left: 18px; }
 .ok-msg { color: var(--good); font-weight: 600; }
 

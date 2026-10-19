@@ -14,7 +14,7 @@ uv run python -m app
 ```
 
 Open http://127.0.0.1:8000 in Chrome, Safari, or Firefox and allow microphone access.
-The first start downloads the speech models (~1.7 GB). After that everything runs offline.
+The first start downloads the speech models (~3 GB). After that everything runs offline.
 
 ## What it does
 
@@ -44,16 +44,44 @@ Space bar starts and stops recording.
 ```
 mic → browser MediaRecorder → /api/analyze
         ├─ ffmpeg → 16 kHz mono, trim silence
-        ├─ wav2vec2 phoneme recognizer (facebook/wav2vec2-lv-60-espeak-cv-ft)
-        │     → the IPA sounds you actually made, with timestamps
+        ├─ phoneme recognizer A: mrrubino/wav2vec2-large-xlsr-53-l2-arctic-phoneme
+        │     trained on L2-ARCTIC, where annotators wrote down what accented speakers ACTUALLY said
+        ├─ phoneme recognizer B: facebook/wav2vec2-lv-60-espeak-cv-ft
+        │     leans toward dictionary pronunciations, but hears the flap T and non-English sounds
         ├─ Whisper (faster-whisper small.en) → the words you meant / a listener heard
         └─ CMUdict → expected American phones per word
-              → weighted alignment (app/align.py) → per-sound errors → tips (app/feedback.py)
+              → weighted alignment of A and B (app/align.py) → combined verdict → tips (app/feedback.py)
 ```
 
 Whisper alone can't find pronunciation mistakes, because it auto-corrects: "I sink so" comes back
-as "I think so". The phoneme recognizer reports the raw sounds, including non-English ones like a
-trilled `r`, retroflex `ʈ`, or `ʋ`. These are mapped to specific accent tips.
+as "I think so".
+
+**Why two phoneme recognizers.** Recognizer B was trained on labels generated from the *text* of
+each recording, so it partly guesses the dictionary pronunciation. A British speaker's "car"
+(no R) comes out of it as `kɑːɹ`, which hides mild and moderate accents. Recognizer A was trained
+on human transcriptions of accented speech, so it hears the dropped R, TH→D, V→F and so on, but it
+is noisier. Each mistake is therefore graded:
+
+- **confirmed:** both recognizers hear it, *or* it's a textbook accent pattern (TH→D, V→W, R→L,
+  dropped R, final Z→S…), *or* the same mistake repeats in the recording. Noise is random; accent
+  features are consistent.
+- **possible:** a one-off that only recognizer A heard. It's shown with a "Possible issue" tag and
+  barely affects the score.
+- The flap T and non-English sounds (rolled R, retroflex T) come from recognizer B, since A has
+  no symbols for them.
+
+Benchmark (5 sentences × 11 synthetic voices; issues = confirmed non-American sounds):
+
+| Voice | Score | Issues | Top features found |
+|---|---|---|---|
+| American | 96 | 4 | (noise) |
+| British | 90 | 13 | dropped R ("bird" → "bud", "car" → "kah") |
+| Indian English ×3 | 77–87 | 18–31 | hard T, TH→D/T, V→F, "bird" with the "book" vowel |
+| Chinese-accented | 80 | 29 | hard T, final Z→S, "sit" → "seat" |
+| Spanish/French/German/Japanese/Russian | 30–51 | 76–122 | many |
+
+With only recognizer B (the original design), the Indian and British voices scored 94–99 and got
+2–6 issues, which was no different from the American voice.
 
 The scoring is designed not to penalize normal American speech:
 - flap T/D (`water` → WAH-der, `sit in` → si-din), glottal T, the cot/caught merger
@@ -72,7 +100,7 @@ The scoring is designed not to penalize normal American speech:
 | `static/` | web UI |
 
 Configuration via environment variables: `ACCENT_WHISPER_MODEL` (default `small.en`; `base.en`
-is faster, `medium.en` more accurate) and `ACCENT_PHONEME_MODEL`.
+is faster, `medium.en` more accurate), `ACCENT_PHONEME_MODEL` and `ACCENT_DETAIL_MODEL`.
 
 ## Tests
 
@@ -82,7 +110,8 @@ uv run pytest
 
 ## Limitations
 
-- The phoneme recognizer is good but not perfect. Treat a single flagged sound as a hint, and
-  trust patterns that repeat.
+- The recognizers are good but not perfect. "Possible issue" items especially are hints, so trust
+  the recurring-mistakes list most.
+- The benchmark uses synthetic voices. Real accents vary more, so results on your own voice may differ.
 - Scoring covers individual sounds. Intonation, rhythm, and word stress aren't scored yet.
 - Words not in CMUdict (and not reachable via simple suffixes) are shown but not scored.

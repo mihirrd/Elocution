@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from .align import Op, align, best_variant
+from .align import Op, align, best_variant, combine
 from .lexicon import WordPron, american_surface, base, phone_ipa, pronounce, sound_name, stress, to_ipa
 from .phones import Heard, heard_respelling, unit_name
 
@@ -62,9 +62,15 @@ PAIR_TIPS: dict[tuple[str, str], str] = {
     ("NG", "N"): "That sounded like N. For NG lift the BACK of the tongue to the soft palate; the tip stays down.",
     ("N", "NG"): "That sounded like NG. Put the tongue tip on the ridge behind the teeth for N.",
     ("P", "B"): "That sounded like B. Release P with a puff of air (hold a paper in front of your mouth; it should move).",
+    ("T", "T"): "You used a hard T. Between vowels Americans tap the tongue quickly, like a soft D: water → WAW-dur, better → BED-ur, little → LID-uhl.",
     ("T", "D"): "That sounded like D. American T is voiceless: release it with a small puff of air. (Only between vowels does it soften into the quick flap, as in 'water'.)",
     ("K", "G"): "That sounded like G. Release K with a puff of air.",
     ("F", "P"): "That sounded like P. Don't close the lips: upper teeth on lower lip and blow.",
+    ("ER", "UH"): "That sounded like the vowel in 'book'. The American 'ur' (bird, early, turn) is one r-colored sound: pull the tongue back into the R position for the whole vowel.",
+    ("V", "F"): "That sounded like F. V is the same mouth position as F, but with your voice buzzing (of → uv, have → hav).",
+    ("D", "T"): "That sounded like T. Keep your voice on through the end of the word for D (bed, not bet).",
+    ("G", "K"): "That sounded like K. Keep your voice on for G (bag, not back).",
+    ("B", "P"): "That sounded like P. Keep your voice on for B, with no puff of air.",
     ("HH", "~x"): "Your H was scratchy (from the throat). The English H is just a soft breath, like fogging a mirror.",
 }
 
@@ -129,6 +135,41 @@ def _sound_view(name_example: tuple[str, str | None], prefix: str) -> dict:
     return {f"{prefix}_say": name, f"{prefix}_example": example}
 
 
+# Dropping these is a well-known accent feature (non-rhotic R, TH avoidance, H dropping).
+KNOWN_DROPS = {"R", "ER", "DH", "TH", "HH"}
+
+
+def _penalty(o: Op) -> float:
+    """Points a single sound costs its word (out of 100). Fixed per mistake rather than per
+    phone, so one clearly non-American sound in a short word still shows."""
+    if o.severity == "ok":
+        return 0.0
+    if o.confidence == "possible":
+        return 8.0
+    return 40.0 if o.severity == "error" else 22.0
+
+
+def _pattern(o: Op) -> tuple:
+    if o.kind == "ins":
+        return ("ins", o.heard.unit)
+    if o.kind == "del":
+        return ("del", base(o.expected))
+    return ("sub", base(o.expected), o.heard.unit)
+
+
+def _promote_likely_real(ops: list[Op]) -> None:
+    """A mistake only one recognizer heard is promoted from "possible" to confirmed when it is a
+    textbook accent pattern, or when the same mistake repeats in the recording: recognizer noise
+    is random, real accent features are consistent."""
+    possible = [o for o in ops if o.confidence == "possible" and o.severity != "ok"]
+    repeats = Counter(_pattern(o) for o in possible)
+    for o in possible:
+        pat = _pattern(o)
+        known = (pat[0] == "sub" and (pat[1], pat[2]) in PAIR_TIPS) or (pat[0] == "del" and pat[1] in KNOWN_DROPS)
+        if known or repeats[pat] >= 2:
+            o.confidence = "confirmed"
+
+
 def _heard_ipa(op: Op) -> str:
     if op.heard is None:
         return ""
@@ -137,7 +178,12 @@ def _heard_ipa(op: Op) -> str:
     return phone_ipa(op.heard.unit + ("0" if op.heard.unit in {"AH", "ER"} and op.expected and stress(op.expected) == 0 else ""))
 
 
-def analyze(text: str, heard: list[Heard], words: list[str] | None = None) -> dict:
+def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
+            detail_heard: list[Heard] | None = None) -> dict:
+    """Score `heard` against the expected pronunciation of `text`.
+
+    `detail_heard`, when given, is a second recognizer's view of the same audio, used to
+    confirm mistakes and to catch the flap T and non-English sounds (see align.combine)."""
     from .lexicon import tokenize
 
     words = words if words is not None else tokenize(text)
@@ -148,20 +194,26 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None) -> di
         if p.phones:
             expected.extend((wi, ph) for ph in p.phones)
 
-    ops = align(expected, heard) if expected else []
+    two_models = detail_heard is not None
+    ops = align(expected, heard, hard_t=not two_models) if expected else []
 
     # A word may have several accepted pronunciations; score against the closest one.
     for wi, p in enumerate(prons):
         if len(p.variants) < 2:
             continue
         before = next((ph for w, ph in reversed(expected) if w < wi), None)
-        found = best_variant(wi, p.variants, ops, before)
+        found = best_variant(wi, p.variants, ops, before, hard_t=not two_models)
         if found:
             variant, local = found
             p.variants = [variant] + [v for v in p.variants if v != variant]
             p.phones, p.surface = variant, american_surface(variant)
             first = next(k for k, o in enumerate(ops) if o.word == wi)
             ops = [o for o in ops[:first] if o.word != wi] + local + [o for o in ops[first:] if o.word != wi]
+
+    if two_models and expected:
+        chosen = [(wi, ph) for wi, p in enumerate(prons) if p.phones for ph in p.phones]
+        combine(ops, align(chosen, detail_heard))
+        _promote_likely_real(ops)
 
     word_results = []
     issue_counter: Counter[tuple[str, str]] = Counter()
@@ -172,9 +224,7 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None) -> di
             word_results.append({**info, "index": wi, "score": None, "status": "unknown", "issues": [], "heard_ipa": ""})
             continue
 
-        n_exp = len(p.phones)
-        total = sum(o.cost for o in w_ops if o.severity != "ok")
-        score = max(0.0, 1.0 - total / max(1, n_exp))
+        score = max(0.0, 1.0 - sum(_penalty(o) for o in w_ops) / 100)
 
         issues = []
         phones_view = []
@@ -183,7 +233,7 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None) -> di
             if o.kind == "ins":
                 tip = _insertion_tip(o.heard, w_ops, at_end=k > last_exp_idx)
                 if tip and o.severity != "ok":
-                    issues.append({"type": "extra", "severity": o.severity, "heard": o.heard.ipa, "tip": tip})
+                    issues.append({"type": "extra", "severity": o.severity, "confidence": o.confidence, "heard": o.heard.ipa, "tip": tip})
                     issue_counter[("+", o.heard.unit)] += 1
                 phones_view.append({"expected": "", "heard": o.heard.ipa, "status": "extra" if o.severity != "ok" else "ok",
                                     "expected_say": "", "expected_example": None,
@@ -191,11 +241,16 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None) -> di
                 continue
             exp_ipa = phone_ipa(o.expected)
             exp_view = _sound_view(sound_name(o.expected), "expected")
+            if o.kind == "del" and o.severity == "ok":
+                # Faint but present (or merged into a neighbor): not worth flagging.
+                phones_view.append({"expected": exp_ipa, "heard": exp_ipa, "status": "ok", **exp_view,
+                                    **_sound_view(sound_name(o.expected), "heard")})
+                continue
             if o.kind == "del":
                 tip = _deletion_tip(o.expected, is_final=k == last_exp_idx)
                 if o.severity == "accent" and base(o.expected) == "DH":
                     tip = "The TH blended into the previous sound. That's common in fast speech, but saying the 'th' clearly sounds more careful."
-                issues.append({"type": "missing", "severity": o.severity, "expected": exp_ipa, "tip": tip})
+                issues.append({"type": "missing", "severity": o.severity, "confidence": o.confidence, "expected": exp_ipa, "tip": tip})
                 issue_counter[(base(o.expected), "-")] += 1
                 phones_view.append({"expected": exp_ipa, "heard": "", "status": "missing", **exp_view,
                                     "heard_say": "", "heard_example": None})
@@ -212,7 +267,7 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None) -> di
                 tip = (f"You said {_say_unit(o.heard.unit, reduced)} instead of {_say(o.expected)}."
                        + (f" Target {generic}" if generic else ""))
             issues.append({
-                "type": "substitution", "severity": o.severity,
+                "type": "substitution", "severity": o.severity, "confidence": o.confidence,
                 "expected": exp_ipa, "heard": heard_ipa, "tip": tip,
             })
             issue_counter[(base(o.expected), o.heard.unit)] += 1

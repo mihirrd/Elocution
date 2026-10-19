@@ -72,7 +72,7 @@ async function pollStatus() {
       el.className = "status ready";
       return;
     }
-    el.textContent = "Loading speech models… (first run downloads ~1.7 GB)";
+    el.textContent = "Loading speech models… (first run downloads ~3 GB)";
   } catch { /* server restarting */ }
   setTimeout(pollStatus, 2000);
 }
@@ -196,11 +196,13 @@ function showError(msg) { $("error").textContent = msg; $("error").hidden = fals
 function hideError() { $("error").hidden = true; }
 
 /* ---------- Results ---------- */
-function verdictFor(score) {
-  if (score >= 90) return "Excellent — that sounded very American.";
-  if (score >= 75) return "Good — a few sounds to polish.";
-  if (score >= 55) return "Getting there — some clear sound errors.";
-  return "Let's work on this one — several sounds were off.";
+function verdictFor(score, features) {
+  const n = features === 1 ? "1 non-American sound" : `${features} non-American sounds`;
+  if (score >= 95 && features === 0) return "Excellent — that sounded American.";
+  if (score >= 95) return `Very close — just ${n} to polish.`;
+  if (score >= 85) return `Good — a light accent: ${n} found.`;
+  if (score >= 65) return `Noticeable accent — ${n} found. Start with the recurring mistakes below.`;
+  return `Strong accent — ${n} found. Work on one sound at a time, starting below.`;
 }
 
 function renderResults(d) {
@@ -209,7 +211,8 @@ function renderResults(d) {
   ring.style.setProperty("--p", d.overall);
   ring.style.setProperty("--c", d.overall >= 85 ? "var(--good)" : d.overall >= 60 ? "var(--fair)" : "var(--poor)");
   $("score").textContent = d.overall;
-  $("verdict").textContent = verdictFor(d.overall);
+  const features = d.words.reduce((n, w) => n + w.issues.filter((x) => x.confidence !== "possible").length, 0);
+  $("verdict").textContent = verdictFor(d.overall, features);
   $("transcript").textContent = d.transcript ? `“${d.transcript}”` : "(nothing recognized)";
   $("expected-respelling").textContent = d.expected_respelling;
   $("heard-respelling").textContent = d.heard_respelling;
@@ -269,7 +272,9 @@ function selectWord(i) {
     })
     .join("");
   const issues = w.issues.length
-    ? `<ul class="issues">${w.issues.map((x) => `<li class="${x.severity}">${esc(x.tip)}</li>`).join("")}</ul>`
+    ? `<ul class="issues">${w.issues.map((x) => x.confidence === "possible"
+        ? `<li class="possible"><span class="maybe">Possible issue</span> ${esc(x.tip)}</li>`
+        : `<li class="${x.severity}">${esc(x.tip)}</li>`).join("")}</ul>`
     : `<p class="ok-msg">✓ Nicely pronounced.</p>`;
   const understood = w.understood === false ? `<p class="hint">⚠ A listener didn't recognize this word in your recording.</p>` : "";
 

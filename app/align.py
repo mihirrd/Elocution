@@ -15,6 +15,8 @@ class Op:
     expected: str | None      # ARPAbet with stress, None for insertions
     heard: Heard | None       # None for deletions
     cost: float
+    pos: int = -1             # index of the expected phone within its word
+    confidence: str = "confirmed"  # "confirmed" (both recognizers agree) | "possible"
 
     @property
     def severity(self) -> str:
@@ -25,10 +27,14 @@ class Op:
         return "error"
 
 
-def align(expected: list[tuple[int, str]], heard: list[Heard]) -> list[Op]:
-    """Weighted Needleman-Wunsch alignment. `expected` is [(word_index, phone), ...]."""
+def align(expected: list[tuple[int, str]], heard: list[Heard], hard_t: bool = True) -> list[Op]:
+    """Weighted Needleman-Wunsch alignment. `expected` is [(word_index, phone), ...].
+
+    `hard_t`: penalize a hard T where Americans flap it. Only meaningful for a recognizer
+    that distinguishes the flap from T."""
     n, m = len(expected), len(heard)
-    sub = [_sub_context(expected, i) for i in range(n)]
+    sub = [(*_sub_context(expected, i), hard_t) for i in range(n)]
+    pos = [sum(1 for w, _ in expected[:i] if w == expected[i][0]) for i in range(n)]
     dele = [_del_context(expected, i) for i in range(n)]
     INF = float("inf")
     dp = [[INF] * (m + 1) for _ in range(n + 1)]
@@ -64,16 +70,16 @@ def align(expected: list[tuple[int, str]], heard: list[Heard]) -> list[Op]:
             i, j = i - 1, j - 1
             cost = substitution_cost(expected[i][1], heard[j].unit, *sub[i])
             kind = "match" if cost <= 0.15 else "sub"
-            ops.append(Op(kind, expected[i][0], expected[i][1], heard[j], cost))
+            ops.append(Op(kind, expected[i][0], expected[i][1], heard[j], cost, pos[i]))
         elif move == "P":
             i, j = i - 1, j - 2
             cost = rhotic_pair_cost(expected[i][1], heard[j].unit, heard[j + 1].unit)
             ops.append(Op("match" if cost <= 0.15 else "sub", expected[i][0], expected[i][1],
-                          _join(heard[j], heard[j + 1]), cost))
+                          _join(heard[j], heard[j + 1]), cost, pos[i]))
         elif move == "D":
             i -= 1
             cost = deletion_cost(expected[i][1], *dele[i])
-            ops.append(Op("del", expected[i][0], expected[i][1], None, cost))
+            ops.append(Op("del", expected[i][0], expected[i][1], None, cost, pos[i]))
         else:
             j -= 1
             ops.append(Op("ins", -1, None, heard[j], insertion_cost(heard[j].unit)))
@@ -103,7 +109,8 @@ def _del_context(expected: list[tuple[int, str]], i: int) -> tuple[str | None, s
     return prv, nxt[1] if nxt else None, nxt is None or nxt[0] != expected[i][0]
 
 
-def best_variant(word: int, variants: list[list[str]], ops: list[Op], before: str | None) -> tuple[list[str], list[Op]] | None:
+def best_variant(word: int, variants: list[list[str]], ops: list[Op], before: str | None,
+                 hard_t: bool = True) -> tuple[list[str], list[Op]] | None:
     """Re-align the sounds heard for one word against each dictionary variant of it and
     return the closest (variant, ops), e.g. 'Wednesday' as -dee or -day."""
     span = [o.heard for o in ops if o.word == word and o.heard is not None]
@@ -111,13 +118,39 @@ def best_variant(word: int, variants: list[list[str]], ops: list[Op], before: st
     best = None
     for v in variants:
         exp = ([(-1, before)] if before else []) + [(word, p) for p in v]
-        local = [o for o in align(exp, span) if o.word == word or o.kind == "ins"]
+        local = [o for o in align(exp, span, hard_t) if o.word == word or o.kind == "ins"]
         for o in local:
             o.word = word
         cost = sum(o.cost for o in local)
         if cost < current - 1e-9:
             current, best = cost, (v, local)
     return best
+
+
+def combine(primary: list[Op], detail: list[Op]) -> None:
+    """Merge the verdicts of two recognizers, in place on `primary`.
+
+    `primary` comes from a recognizer trained on what accented speakers actually said; it
+    catches real substitutions and dropped sounds but is noisier. `detail` comes from a
+    recognizer that leans toward dictionary pronunciations: when it also hears a mistake, the
+    mistake is confirmed; when it doesn't, the mistake is only "possible". The detail
+    recognizer alone is trusted for sounds the primary one can't represent: the American
+    flap T and non-English sounds (rolled R, retroflex T...)."""
+    by_pos = {(o.word, o.pos): o for o in detail if o.expected is not None}
+    detail_extra = {o.word for o in detail if o.kind == "ins" and o.severity != "ok"}
+    for o in primary:
+        if o.expected is None:
+            if o.severity != "ok" and o.word not in detail_extra:
+                o.confidence = "possible"
+            continue
+        d = by_pos.get((o.word, o.pos))
+        if o.severity != "ok":
+            if d is None or d.severity == "ok":
+                o.confidence = "possible"
+        elif d is not None and d.severity != "ok" and d.heard is not None and (
+            d.heard.foreign or d.heard.unit == base(d.expected)  # foreign sound / hard T
+        ):
+            o.kind, o.heard, o.cost = d.kind, d.heard, d.cost
 
 
 def _join(a: Heard, b: Heard) -> Heard:

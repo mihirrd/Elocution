@@ -27,6 +27,7 @@ def warm_models() -> None:
     # Load the models in the background so the first analysis isn't slow.
     def load():
         recognizer.phoneme_recognizer()
+        recognizer.detail_recognizer()
         recognizer.transcriber()
 
     threading.Thread(target=load, daemon=True).start()
@@ -39,7 +40,8 @@ def index():
 
 @app.get("/api/status")
 def status():
-    return {"phoneme_model": "phoneme" in recognizer._models, "whisper_model": "whisper" in recognizer._models}
+    loaded = recognizer._models
+    return {"phoneme_model": "phoneme" in loaded and "detail" in loaded, "whisper_model": "whisper" in loaded}
 
 
 @app.get("/api/sentences")
@@ -60,15 +62,15 @@ def _run_analysis(data: bytes, target: str) -> dict:
         raise ValueError("The recording is too short or silent. Try again a little closer to the microphone.")
 
     transcript = recognizer.transcriber().transcribe(audio)
-    tokens = recognizer.phoneme_recognizer().recognize(audio)
-    heard = tokens_to_heard(tokens)
+    heard = tokens_to_heard(recognizer.phoneme_recognizer().recognize(audio))
+    detail = tokens_to_heard(recognizer.detail_recognizer().recognize(audio))
 
     mode = "target" if target.strip() else "free"
     text = target if mode == "target" else transcript
     if not tokenize(text):
         raise ValueError("I couldn't understand any words. Please speak a full sentence clearly.")
 
-    result = analyze(text, heard)
+    result = analyze(text, heard, detail_heard=detail)
     result["mode"] = mode
     result["transcript"] = transcript
     result["audio_offset"] = offset

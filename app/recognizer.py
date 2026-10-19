@@ -11,7 +11,10 @@ import threading
 import numpy as np
 
 SAMPLE_RATE = 16_000
-PHONEME_MODEL = os.environ.get("ACCENT_PHONEME_MODEL", "facebook/wav2vec2-lv-60-espeak-cv-ft")
+# Trained on L2-ARCTIC, where annotators transcribed what accented speakers actually said.
+PHONEME_MODEL = os.environ.get("ACCENT_PHONEME_MODEL", "mrrubino/wav2vec2-large-xlsr-53-l2-arctic-phoneme")
+# Leans toward dictionary pronunciations, but hears the flap T and non-English sounds.
+DETAIL_MODEL = os.environ.get("ACCENT_DETAIL_MODEL", "facebook/wav2vec2-lv-60-espeak-cv-ft")
 WHISPER_MODEL = os.environ.get("ACCENT_WHISPER_MODEL", "small.en")
 
 _lock = threading.Lock()
@@ -72,7 +75,7 @@ class PhonemeRecognizer:
             self.device = "cpu"
         vocab = json.load(open(hf_hub_download(model_name, "vocab.json"), encoding="utf-8"))
         self.id_to_token = {i: t for t, i in vocab.items()}
-        self.blank = vocab.get("<pad>", 0)
+        self.blank = vocab.get("<pad>", vocab.get("[PAD]", 0))
         self.frame_sec = 0.02  # wav2vec2 emits one frame per 20 ms
 
     def recognize(self, audio: np.ndarray) -> list[tuple[str, float, float]]:
@@ -92,7 +95,32 @@ class PhonemeRecognizer:
                 tok, s, _ = tokens[-1]
                 tokens[-1] = (tok, s, (f + 1) * self.frame_sec)
             prev = i
-        return [t for t in tokens if t[0] not in {"<s>", "</s>", "<unk>", " ", "|"}]
+        tokens = [t for t in tokens if t[0] not in {"<s>", "</s>", "<unk>", "[UNK]", " ", "|", "ˌ", "ˈ"}]
+        return merge_characters(tokens)
+
+
+# Some models emit one IPA character per token; rebuild diphthongs and affricates.
+_DIPHTHONGS = {("a", "ɪ"): "aɪ", ("a", "ʊ"): "aʊ", ("o", "ʊ"): "oʊ", ("e", "ɪ"): "eɪ", ("ɔ", "ɪ"): "ɔɪ"}
+
+
+def merge_characters(tokens: list[tuple[str, float, float]]) -> list[tuple[str, float, float]]:
+    out: list[tuple[str, float, float]] = []
+    i = 0
+    while i < len(tokens):
+        tok, s, e = tokens[i]
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+        if tok == "͡" and out and nxt:  # tie bar: t͡ʃ -> tʃ
+            prev = out.pop()
+            out.append((prev[0] + nxt[0], prev[1], nxt[2]))
+            i += 2
+            continue
+        if nxt and (tok, nxt[0]) in _DIPHTHONGS:
+            out.append((_DIPHTHONGS[(tok, nxt[0])], s, nxt[2]))
+            i += 2
+            continue
+        out.append((tok, s, e))
+        i += 1
+    return out
 
 
 class Transcriber:
@@ -120,6 +148,10 @@ def _get(name: str, factory):
 
 def phoneme_recognizer() -> PhonemeRecognizer:
     return _get("phoneme", PhonemeRecognizer)
+
+
+def detail_recognizer() -> PhonemeRecognizer:
+    return _get("detail", lambda: PhonemeRecognizer(DETAIL_MODEL))
 
 
 def transcriber() -> Transcriber:

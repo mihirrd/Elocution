@@ -110,3 +110,39 @@ def test_flap_across_word_boundary():
 def test_consonant_merge_across_words():
     r = analyze("this seat", heard("ð", "ɪ", "s", "iː", "t"))
     assert r["words"][0]["status"] == "good"
+
+
+# --- two recognizers: an accent-faithful primary and a dictionary-leaning detail model ---
+
+def test_known_accent_pattern_is_confirmed_even_if_detail_model_misses_it():
+    # Primary hears "dis"; the detail model, biased toward the dictionary, hears "this".
+    r = analyze("this", heard("d", "ɪ", "s"), detail_heard=heard("ð", "ɪ", "s"))
+    issue = r["words"][0]["issues"][0]
+    assert issue["confidence"] == "confirmed" and issue["expected"] == "ð"
+
+
+def test_one_off_unknown_deviation_is_only_possible():
+    r = analyze("bit", heard("b", "ɛ", "t"), detail_heard=heard("b", "ɪ", "t"))
+    issue = r["words"][0]["issues"][0]
+    assert issue["confidence"] == "possible"
+    assert r["words"][0]["status"] == "good"
+
+
+def test_repeated_deviation_is_confirmed():
+    r = analyze("bit sit", heard("b", "ɛ", "t", "s", "ɛ", "t"),
+                detail_heard=heard("b", "ɪ", "t", "s", "ɪ", "t"))
+    assert all(w["issues"][0]["confidence"] == "confirmed" for w in r["words"])
+
+
+def test_hard_t_comes_from_detail_model_only():
+    # The primary model has no flap symbol, so its "t" is not evidence of a hard T...
+    native = analyze("water", heard("w", "ɔ", "t", "ɚ"), detail_heard=heard("w", "ɔ", "ɾ", "ɚ"))
+    assert native["words"][0]["issues"] == []
+    # ...but when the detail model hears a real t, the American flap is missing.
+    hard = analyze("water", heard("w", "ɔ", "t", "ɚ"), detail_heard=heard("w", "ɔ", "t", "ɚ"))
+    assert "hard T" in hard["words"][0]["issues"][0]["tip"]
+
+
+def test_non_rhotic_er_is_flagged():
+    r = analyze("water", heard("w", "ɔ", "ɾ", "ə"))
+    assert any("R" in i["tip"] for i in r["words"][0]["issues"])

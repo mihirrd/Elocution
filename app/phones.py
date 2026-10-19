@@ -131,7 +131,8 @@ def is_vowel_unit(unit: str) -> bool:
     return unit in VOWELS
 
 
-def substitution_cost(expected: str, heard: str, next_expected: str | None = None, flap_ok: bool = False) -> float:
+def substitution_cost(expected: str, heard: str, next_expected: str | None = None, flap_ok: bool = False,
+                      hard_t: bool = True) -> float:
     """Cost of hearing `heard` (a Heard.unit) where `expected` (ARPAbet with stress) was due.
 
     0 means correct (including accepted American variants), ~0.3-0.5 is an accent-level
@@ -141,6 +142,8 @@ def substitution_cost(expected: str, heard: str, next_expected: str | None = Non
     st = stress(expected)
 
     if heard == exp:
+        if flap_ok and hard_t and exp == "T":
+            return 0.3  # a hard T where Americans tap a quick D ("water" -> WAW-dur)
         return 0.0
     if heard.startswith("~"):
         near = FOREIGN_NEAREST.get(heard[1:])
@@ -157,7 +160,9 @@ def substitution_cost(expected: str, heard: str, next_expected: str | None = Non
         return 0.1  # glottal T ("button", "that one")
     if {exp, heard} == {"AA", "AO"}:
         return 0.1  # cot-caught merger is normal in much of the US
-    if st == 0 and exp in VOWELS and heard in REDUCED | {"IY"}:
+    if exp == "ER" and heard == "AH":
+        return 0.5  # R dropped from -er ("water" as WAW-tuh): the classic non-American giveaway
+    if st == 0 and exp in VOWELS and exp != "ER" and heard in REDUCED | {"IY"}:
         return 0.1  # unstressed vowels reduce
     if exp == "IY" and st == 0 and heard == "IH":
         return 0.1
