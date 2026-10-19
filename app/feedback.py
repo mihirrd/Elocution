@@ -118,7 +118,7 @@ def _insertion_tip(heard: Heard, word_ops: list[Op], at_end: bool) -> str | None
 
 
 def _fmt(name: str, example: str | None) -> str:
-    return f'"{name}" (as in {example})' if example else f'"{name}"'
+    return f"“{name}” (as in {example})" if example else f"“{name}”"
 
 
 def _say(phone: str) -> str:
@@ -283,8 +283,6 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
             "phones": phones_view,
             "heard_ipa": "/" + "".join(h.ipa for h in heard_seq) + "/" if heard_seq else "(not heard)",
             "heard_respelling": heard_respelling(heard_seq) if heard_seq else "(not heard)",
-            "start": min(h.start for h in heard_seq) if heard_seq else None,
-            "end": max(h.end for h in heard_seq) if heard_seq else None,
         })
 
     scored = [w for w in word_results if w["score"] is not None]
@@ -296,6 +294,9 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
             label, label_ipa = f"extra {_say_unit(got)}", f"extra /{_unit_ipa(got)}/"
         elif got == "-":
             label, label_ipa = f"dropped {_say(exp + '1')}", f"dropped /{phone_ipa(exp + '1')}/"
+        elif exp == got:
+            label = f"hard {_say(exp + '1')} where Americans tap a quick “d”"
+            label_ipa = f"/{phone_ipa(exp + '1')}/ → /ɾ/"
         else:
             label = f"{_say(exp + '1')} → {_say_unit(got)}"
             label_ipa = f"/{phone_ipa(exp + '1')}/ → /{_unit_ipa(got)}/"

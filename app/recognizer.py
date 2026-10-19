@@ -35,6 +35,21 @@ def load_audio(data: bytes) -> tuple[np.ndarray, float]:
     return trim_silence(audio)
 
 
+def to_wav_base64(audio: np.ndarray) -> str:
+    """Encode mono float audio as a base64 16-bit WAV file."""
+    import base64
+    import io
+    import wave
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(SAMPLE_RATE)
+        w.writeframes((np.clip(audio, -1, 1) * 32767).astype("<i2").tobytes())
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 def trim_silence(audio: np.ndarray, threshold: float = 0.01, pad: float = 0.15) -> tuple[np.ndarray, float]:
     frame = int(0.02 * SAMPLE_RATE)
     n = len(audio) // frame
@@ -74,12 +89,15 @@ class PhonemeRecognizer:
         except Exception:
             self.device = "cpu"
         vocab = json.load(open(hf_hub_download(model_name, "vocab.json"), encoding="utf-8"))
+        self.vocab = vocab
         self.id_to_token = {i: t for t, i in vocab.items()}
         self.blank = vocab.get("<pad>", vocab.get("[PAD]", 0))
         self.frame_sec = 0.02  # wav2vec2 emits one frame per 20 ms
 
-    def recognize(self, audio: np.ndarray) -> list[tuple[str, float, float]]:
-        """Return the sequence of (phoneme token, start sec, end sec) heard in the audio."""
+    def recognize(self, audio: np.ndarray, with_log_probs: bool = False):
+        """Return the sequence of (phoneme token, start sec, end sec) heard in the audio.
+
+        With `with_log_probs`, also return the frame-by-frame log probabilities (T x vocab)."""
         torch = self.torch
         inputs = self.extractor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
         with torch.inference_mode():
@@ -96,7 +114,10 @@ class PhonemeRecognizer:
                 tokens[-1] = (tok, s, (f + 1) * self.frame_sec)
             prev = i
         tokens = [t for t in tokens if t[0] not in {"<s>", "</s>", "<unk>", "[UNK]", " ", "|", "ˌ", "ˈ"}]
-        return merge_characters(tokens)
+        tokens = merge_characters(tokens)
+        if with_log_probs:
+            return tokens, torch.log_softmax(logits, dim=-1).numpy()
+        return tokens
 
 
 # Some models emit one IPA character per token; rebuild diphthongs and affricates.

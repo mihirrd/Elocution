@@ -146,3 +146,56 @@ def test_hard_t_comes_from_detail_model_only():
 def test_non_rhotic_er_is_flagged():
     r = analyze("water", heard("w", "ɔ", "ɾ", "ə"))
     assert any("R" in i["tip"] for i in r["words"][0]["issues"])
+
+
+# --- word segmentation (forced alignment) ---
+
+def _fake_log_probs(frames, vocab):
+    """frames: list of token strings (or "_" for blank), one per 20 ms frame."""
+    import numpy as np
+    lp = np.full((len(frames), len(vocab)), -10.0)
+    for t, tok in enumerate(frames):
+        lp[t, vocab["<pad>" if tok == "_" else tok]] = 0.0
+    return lp
+
+
+def test_forced_alignment_finds_word_boundaries():
+    from app.segment import word_spans
+    vocab = {"<pad>": 0, "h": 1, "aɪ": 2, "ð": 3, "ɛ": 4, "ɹ": 5}
+    # "hi" then a pause then "there"
+    frames = ["_", "h", "h", "aɪ", "aɪ", "aɪ", "_", "_", "_", "_", "_", "_", "ð", "ɛ", "ɛ", "ɹ", "_"]
+    lp = _fake_log_probs(frames, vocab)
+    spans = word_spans(lp, vocab, 0, 0.02, [["HH", "AY1"], ["DH", "EH1", "R"]], len(frames) * 0.02, max_pad=0.04)
+    (s1, e1), (s2, e2) = spans
+    assert abs(s1 - 0.0) < 0.03 and abs(e1 - 0.16) < 0.03   # phones at frames 1-5, +40 ms pad
+    assert abs(s2 - 0.20) < 0.03 and abs(e2 - 0.34) < 0.03  # phones at frames 12-15, -40 ms pad
+    assert e1 <= s2
+
+
+def test_forced_alignment_splits_touching_words_at_the_gap():
+    from app.segment import word_spans
+    vocab = {"<pad>": 0, "s": 1, "iː": 2, "ɪ": 3, "t": 4}
+    frames = ["s", "iː", "iː", "_", "s", "ɪ", "t"]  # "see" + "sit", no pause
+    spans = word_spans(_fake_log_probs(frames, vocab), vocab, 0, 0.02, [["S", "IY1"], ["S", "IH1", "T"]], 0.14)
+    assert spans[0][1] == spans[1][0] == 0.07  # boundary in the middle of the blank frame
+
+
+# --- natural voice: text -> Kokoro phonemes ---
+
+def test_kokoro_phonemes_match_kokoro_lexicon():
+    from app.tts import text_to_kokoro
+    # Reference values from Kokoro's own American lexicon (misaki us_gold).
+    expected = {"water": "wˈɔɾəɹ", "little": "lˈɪɾᵊl", "about": "əbˈWt", "bird": "bˈɜɹd",
+                "judge": "ʤˈʌʤ", "thirty": "θˈɜɹɾi", "corner": "kˈɔɹnəɹ"}
+    for word, ps in expected.items():
+        assert text_to_kokoro(word) == ps, word
+
+
+def test_kokoro_sentence_keeps_punctuation_and_unstresses_function_words():
+    from app.tts import text_to_kokoro
+    assert text_to_kokoro("The car, 2 cats!") == "ðə kˈɑɹ, tˈu kˈæts!"
+
+
+def test_flap_applies_before_final_y():
+    from app.lexicon import american_surface, lookup
+    assert "DX" in american_surface(lookup("thirty"))

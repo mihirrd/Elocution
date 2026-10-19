@@ -14,7 +14,7 @@ uv run python -m app
 ```
 
 Open http://127.0.0.1:8000 in Chrome, Safari, or Firefox and allow microphone access.
-The first start downloads the speech models (~3 GB). After that everything runs offline.
+The first start downloads the speech models and voice (~3.3 GB). Requires Python 3.12 (uv installs it). After that everything runs offline.
 
 ## What it does
 
@@ -38,6 +38,13 @@ For each recording you get:
 - what a listener understood (the Whisper transcript), which shows whether you were intelligible
 
 Space bar starts and stops recording.
+
+## The voice
+
+**Listen** and **Slowly** use [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0),
+a small open-source voice model that runs locally (~0.3 s per sentence, then cached). It's given
+phonemes, not text, built from the same American pronunciations the coach scores against, so the voice
+says exactly what it teaches (the soft T in "water", the R in "corner").
 
 ## How it works
 
@@ -95,12 +102,15 @@ The scoring is designed not to penalize normal American speech:
 | `app/phones.py` | recognizer token → American phone mapping, substitution/insertion/deletion costs |
 | `app/align.py` | Needleman–Wunsch alignment, best-variant rescoring, insertion attribution |
 | `app/feedback.py` | per-word scores, tips knowledge base, recurring patterns |
+| `app/tts.py` | natural American voice for Listen (Kokoro-82M), fed the coach's own American pronunciations |
+| `app/segment.py` | finds each word in the recording (CTC forced alignment) for "play your version" |
 | `app/recognizer.py` | audio decoding, wav2vec2 phoneme recognition, Whisper |
 | `app/main.py` | FastAPI server and API |
-| `static/` | web UI |
+| `static/` | web UI (typeset in EB Garamond, bundled in `static/fonts/` under the SIL Open Font License) |
 
 Configuration via environment variables: `ACCENT_WHISPER_MODEL` (default `small.en`; `base.en`
-is faster, `medium.en` more accurate), `ACCENT_PHONEME_MODEL` and `ACCENT_DETAIL_MODEL`.
+is faster, `medium.en` more accurate), `ACCENT_PHONEME_MODEL`, `ACCENT_DETAIL_MODEL`, and `ACCENT_VOICE`
+(default `af_heart`; other American voices include `af_bella`, `am_michael`, `am_fenrir`).
 
 ## Tests
 

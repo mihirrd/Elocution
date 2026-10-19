@@ -181,7 +181,9 @@ def american_surface(phones: list[str]) -> list[str]:
         if base(out[i]) in {"T", "D"}:
             prev, nxt = out[i - 1], out[i + 1]
             prev_ok = is_vowel(prev) or base(prev) == "R"
-            if prev_ok and is_vowel(nxt) and stress(nxt) == 0:
+            # A word-final "-y" counts as unstressed even when marked secondary (thirty, forty).
+            weak = stress(nxt) == 0 or (stress(nxt) == 2 and base(nxt) == "IY" and i + 1 == len(out) - 1)
+            if prev_ok and is_vowel(nxt) and weak:
                 out[i] = "DX"
     return out
 
