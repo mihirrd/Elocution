@@ -22,7 +22,6 @@ from .phones import tokens_to_heard
 from .acoustics import Acoustics
 from .segment import word_spans
 from .sentences import PRACTICE
-from .testset import SPEAKERS, STYLES, TESTSET
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 # Every recording and what the recognizers heard is kept here (locally) so mistakes can be
@@ -127,7 +126,7 @@ def score(audio, text: str, heard, detail, detail_log_probs) -> tuple[dict, list
     return analyze(text, heard, detail_heard=detail, measure=measure), measurements
 
 
-def _run_analysis(data: bytes, target: str, label: dict | None = None) -> dict:
+def _run_analysis(data: bytes, target: str) -> dict:
     audio, _ = recognizer.load_audio(data)
     if len(audio) < recognizer.SAMPLE_RATE * 0.3:
         raise ValueError("The recording is too short or silent. Try again a little closer to the microphone.")
@@ -143,7 +142,7 @@ def _run_analysis(data: bytes, target: str, label: dict | None = None) -> dict:
         raise ValueError("I couldn't understand any words. Please speak a full sentence clearly.")
 
     result, measurements = score(audio, text, heard, detail, detail_log_probs)
-    _save(data, target, transcript, heard, detail, result, measurements, label)
+    _save(data, target, transcript, heard, detail, result, measurements)
     result["mode"] = mode
     result["transcript"] = transcript
     # Where each word is, for "play your version". Times are on the analyzed (trimmed) audio,
@@ -166,7 +165,7 @@ def _run_analysis(data: bytes, target: str, label: dict | None = None) -> dict:
 
 
 def _save(data: bytes, target: str, transcript: str, heard, detail, result: dict,
-          measurements: list[dict], label: dict | None) -> None:
+          measurements: list[dict]) -> None:
     if not SAVE_DIR:
         return
     folder = Path(SAVE_DIR)
@@ -174,7 +173,7 @@ def _save(data: bytes, target: str, transcript: str, heard, detail, result: dict
     stem = time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}"
     (folder / f"{stem}.audio").write_bytes(data)
     record = {
-        "target": target, "transcript": transcript, "label": label,
+        "target": target, "transcript": transcript,
         "primary_heard": " ".join(h.ipa for h in heard),
         "detail_heard": " ".join(h.ipa for h in detail),
         "measurements": measurements,
@@ -193,34 +192,13 @@ def _flatten(m: dict[str, dict[int, float]], chosen: list[tuple[int, str]], word
     return rows
 
 
-@app.get("/api/testset")
-def testset():
-    return {"items": TESTSET, "speakers": SPEAKERS, "styles": STYLES}
-
-
-@app.get("/api/testset/done")
-def testset_done(speaker: str, style: str):
-    """Test-set items already recorded with this label, to resume where the speaker left off."""
-    done = set()
-    for f in Path(SAVE_DIR).glob("*.json") if SAVE_DIR else []:
-        try:
-            label = json.loads(f.read_text(encoding="utf-8")).get("label") or {}
-        except (OSError, ValueError):
-            continue
-        if label.get("speaker") == speaker and label.get("style") == style:
-            done.add(label.get("item"))
-    return sorted(i for i in done if i)
-
-
 @app.post("/api/analyze")
-async def analyze_audio(audio: UploadFile = File(...), target: str = Form(""),
-                        speaker: str = Form(""), style: str = Form(""), item: str = Form("")):
+async def analyze_audio(audio: UploadFile = File(...), target: str = Form("")):
     data = await audio.read()
     if not data:
         raise HTTPException(400, "Empty recording.")
-    label = {"speaker": speaker, "style": style, "item": item} if speaker else None
     try:
-        return await asyncio.to_thread(_run_analysis, data, target, label)
+        return await asyncio.to_thread(_run_analysis, data, target)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 

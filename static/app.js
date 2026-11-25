@@ -58,9 +58,7 @@ function setTab(tab) {
   $("lookup-panel").hidden = tab !== "lookup";
   $("practice-controls").hidden = tab !== "practice";
   $("free-controls").hidden = tab !== "free";
-  $("testset-controls").hidden = tab !== "testset";
-  $("results").hidden = tab === "lookup" || !state.result || state.result.mode !== (tab === "free" ? "free" : "target");
-  if (tab === "testset") loadTestset();
+  $("results").hidden = tab === "lookup" || !state.result || state.result.mode !== (tab === "practice" ? "target" : "free");
 }
 
 /* ---------- Model status ---------- */
@@ -102,51 +100,6 @@ async function loadSentences() {
   $("focus-chips").appendChild(b);
   nextSentence();
 }
-/* ---------- Test set: labelled recordings for measuring detection ---------- */
-const ts = { items: [], done: new Set(), current: null, loaded: false };
-async function loadTestset() {
-  if (!ts.loaded) {
-    const d = await (await fetch("/api/testset")).json();
-    ts.items = d.items;
-    $("ts-speaker").innerHTML = d.speakers.map((s) => `<option value="${esc(s)}">${esc(s)}</option>`).join("");
-    $("ts-style").innerHTML = Object.entries(d.styles).map(([k, v]) => `<option value="${esc(k)}">${esc(v)}</option>`).join("");
-    try {
-      const saved = JSON.parse(localStorage.getItem("testsetLabel") || "{}");
-      if (saved.speaker) $("ts-speaker").value = saved.speaker;
-      if (saved.style) $("ts-style").value = saved.style;
-    } catch { /* storage unavailable */ }
-    ["ts-speaker", "ts-style"].forEach((id) => $(id).addEventListener("change", () => {
-      try { localStorage.setItem("testsetLabel", JSON.stringify({ speaker: $("ts-speaker").value, style: $("ts-style").value })); } catch { /* ignore */ }
-      refreshTestsetProgress();
-    }));
-    $("ts-prev").addEventListener("click", () => step(-1));
-    $("ts-next").addEventListener("click", () => step(1));
-    ts.loaded = true;
-  }
-  await refreshTestsetProgress();
-}
-async function refreshTestsetProgress() {
-  const q = `speaker=${encodeURIComponent($("ts-speaker").value)}&style=${encodeURIComponent($("ts-style").value)}`;
-  ts.done = new Set(await (await fetch("/api/testset/done?" + q)).json());
-  showTestsetItem(nextUndone(0));
-}
-function nextUndone(from) {
-  for (let k = 0; k < ts.items.length; k++) {
-    const i = (from + k) % ts.items.length;
-    if (!ts.done.has(ts.items[i].id)) return i;
-  }
-  return -1;
-}
-function step(delta) {
-  const i = ts.current ? ts.items.indexOf(ts.current) : 0;
-  showTestsetItem((i + delta + ts.items.length) % ts.items.length);
-}
-function showTestsetItem(i) {
-  ts.current = i >= 0 ? ts.items[i] : null;
-  $("ts-sentence").textContent = ts.current ? ts.current.text : "All done for this speaker and style. Thank you!";
-  const status = ts.current && ts.done.has(ts.current.id) ? " · already recorded (recording again adds another take)" : "";
-  $("ts-progress").textContent = `${ts.done.size} of ${ts.items.length} recorded${ts.current ? ` · sentence ${i + 1}${status}` : ""}`;
-}
 
 let ipaTimer = null;
 function setTarget(text) {
@@ -176,9 +129,6 @@ $("btn-record").addEventListener("click", () => (state.recording ? stopRecording
 
 async function startRecording() {
   hideError();
-  if (state.tab === "testset" && !ts.current) {
-    return showError("Every sentence for this speaker and style is recorded. Pick another style or speaker.");
-  }
   if (state.tab === "practice" && !$("target").value.trim()) {
     return showError("Type or choose a sentence to practice first.");
   }
@@ -233,13 +183,7 @@ async function submitRecording(blob) {
 
   const form = new FormData();
   form.append("audio", blob, "recording");
-  const tsItem = state.tab === "testset" ? ts.current : null;
-  form.append("target", state.tab === "practice" ? $("target").value : tsItem ? tsItem.text : "");
-  if (tsItem) {
-    form.append("speaker", $("ts-speaker").value);
-    form.append("style", $("ts-style").value);
-    form.append("item", tsItem.id);
-  }
+  form.append("target", state.tab === "practice" ? $("target").value : "");
   try {
     const r = await fetch("/api/analyze", { method: "POST", body: form });
     const d = await r.json();
@@ -247,7 +191,6 @@ async function submitRecording(blob) {
     state.result = d;
     state.analyzed = await decodeAnalyzedAudio(d.audio_wav);
     renderResults(d);
-    if (tsItem) { ts.done.add(tsItem.id); showTestsetItem(nextUndone(ts.items.indexOf(tsItem) + 1)); }
   } catch (e) {
     showError(e.message);
   } finally {

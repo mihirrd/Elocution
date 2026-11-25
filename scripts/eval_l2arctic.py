@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from eval import FEATURES, phone_features  # noqa: E402
+from features import FEATURES, phone_features  # noqa: E402
 
 DATA = ROOT / "data" / "l2arctic"
 CACHE = ROOT / "data" / "eval_l2arctic"

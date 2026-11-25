@@ -141,17 +141,6 @@ textarea:focus, #lookup-input:focus { outline: none; border-bottom-color: var(--
 .ipa-line strong { font-weight: 600; color: var(--ink); letter-spacing: .02em; }
 .key { color: var(--ink-faint); font-size: 11px; margin: 12px 0 0 34px; }
 
-/* ---------- Test set ---------- */
-.testset-labels { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 28px; margin-bottom: 18px; color: var(--ink-soft); }
-.testset-labels select {
-  font: 17px var(--serif); color: var(--ink); background: transparent; margin-left: 6px;
-  border: 0; border-bottom: 1px solid var(--rule); padding: 2px 4px;
-}
-.testset-labels select:focus { outline: none; border-bottom-color: var(--rubric); }
-.ts-progress { margin: 0 0 10px 34px; }
-.ts-sentence { font: italic 26px/1.4 var(--serif); color: var(--ink); margin: 0; padding: 2px 0 8px; border-bottom: 1px solid var(--rule); min-height: 1.4em; }
-.ts-nav { margin: 10px 0 0 34px; }
-.ts-hint { margin: 14px 0 0 34px; font-size: 15px; }
 
 /* ---------- Buttons ---------- */
 button { font-family: var(--serif); cursor: pointer; }
@@ -315,7 +304,7 @@ body:not(.show-ipa) .ipa-only { display: none !important; }
   .epigraph { padding-left: 22px; }
   .epigraph::before { font-size: 60px; top: -12px; left: -8px; }
   textarea { font-size: 22px; }
-  .key, .ts-progress, .ts-nav, .ts-hint { margin-left: 22px; }
+  .key { margin-left: 22px; }
   .w .wt { font-size: 23px; }
   .pron-grid { grid-template-columns: 1fr; gap: 0; }
   .pron-grid dd { margin-bottom: 8px; }
