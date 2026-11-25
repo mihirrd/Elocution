@@ -32,7 +32,7 @@ SAVE_DIR = os.environ.get("ACCENT_SAVE_DIR", str(STATIC.parent / "recordings"))
 # behind the browser's built-in login box (HTTP Basic auth; any user name works). Unset: open.
 PASSWORD = os.environ.get("ACCENT_PASSWORD", "")
 
-app = FastAPI(title="American Accent Coach")
+app = FastAPI(title="Leviosa: American Accent Coach")
 
 
 @app.middleware("http")
@@ -47,8 +47,19 @@ async def require_password(request: Request, call_next):
                 supplied = ""
         if not hmac.compare_digest(supplied.encode(), PASSWORD.encode()):
             return Response("Password required.", status_code=401,
-                            headers={"WWW-Authenticate": 'Basic realm="Accent Coach", charset="UTF-8"'})
+                            headers={"WWW-Authenticate": 'Basic realm="Leviosa", charset="UTF-8"'})
     return await call_next(request)
+
+
+@app.middleware("http")
+async def revalidate_ui(request: Request, call_next):
+    # Make browsers check for a newer page, script and stylesheet on every load (a cheap
+    # "not modified" reply when nothing changed), so an update shows up without a hard refresh.
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".js", ".css", ".html")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -95,12 +106,12 @@ def speaker() -> tts.Speaker:
 
 
 @app.get("/api/speak")
-async def speak(text: str, slow: bool = False):
+async def speak(text: str):
     """A natural American voice reading `text`, as a WAV file."""
     text = text.strip()
     if not text or len(text) > 1000:
         raise HTTPException(400, "Text must be 1-1000 characters.")
-    data = await asyncio.to_thread(lambda: speaker().wav(text, "slow" if slow else "normal"))
+    data = await asyncio.to_thread(lambda: speaker().wav(text))
     return Response(data, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
 
 

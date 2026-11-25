@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>American Accent Coach</title>
+  <title>Leviosa: American Accent Coach</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header class="masthead">
-    <h1>American Accent Coach</h1>
+    <h1>Leviosa<span class="tagline">American Accent Coach</span></h1>
     <div class="masthead-meta">
       <span id="model-status" class="status loading">Loading models…</span>
       <label class="toggle"><input type="checkbox" id="toggle-ipa"> IPA</label>
@@ -31,20 +31,27 @@
           <textarea id="target" rows="2" spellcheck="false" aria-label="Sentence to say"></textarea>
           <figcaption>
             <div id="target-ipa" class="ipa-line"></div>
-            <button id="btn-listen-target" class="mini">Listen</button>
           </figcaption>
         </figure>
         <p class="key">CAPS = stressed</p>
+        <p class="tip">First listen to the American version, then record yourself saying the sentence.</p>
       </div>
       <div id="free-controls" hidden>
         <p class="hint">Say anything.</p>
       </div>
 
       <div class="recorder">
-        <button id="btn-record" class="record" aria-label="Record"><span class="dot"></span></button>
-        <div class="rec-info">
-          <div id="rec-state">Record</div>
-          <div id="rec-timer" class="timer">0:00</div>
+        <div id="listen-step" class="step">
+          <span class="step-num">1</span>
+          <button id="btn-listen-target" class="mini">American version</button>
+        </div>
+        <div class="step">
+          <span id="step-num-2" class="step-num">2</span>
+          <button id="btn-record" class="record" aria-label="Record"><span class="dot"></span></button>
+          <div class="rec-info">
+            <div id="rec-state">Record</div>
+            <div id="rec-timer" class="timer">0:00</div>
+          </div>
         </div>
         <audio id="playback" controls hidden></audio>
       </div>
@@ -86,6 +93,7 @@
       <div id="lookup-results"></div>
     </section>
   </main>
+  <footer class="credit">Developed by Mihir Deshpande</footer>
 
   <script src="/static/app.js"></script>
 </body>

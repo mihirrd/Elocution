@@ -76,6 +76,8 @@ h1 {
   line-height: 1.1;
   letter-spacing: .01em;
 }
+h1 .tagline { display: block; font-size: .5em; font-weight: 400; color: var(--ink-faint); letter-spacing: .02em; margin-top: 4px; }
+.credit { text-align: center; font-size: 13px; color: var(--ink-faint); padding: 0 16px 28px; }
 .masthead-meta { display: flex; justify-content: center; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 15px; color: var(--ink-soft); margin-top: 6px; }
 .status { font-size: 11px; }
 .status.loading { color: var(--fair); }
@@ -85,20 +87,20 @@ h1 {
 
 /* ---------- Chapters (tabs) ---------- */
 .chapters {
-  display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 26px;
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 10px;
   margin-top: 22px; padding-top: 12px; padding-bottom: 12px;
   border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
   box-shadow: 0 3px 0 -2px var(--rule), 0 -3px 0 -2px var(--rule); /* double rule */
 }
 .chapters .tab {
-  background: none; border: 0; padding: 4px 0; cursor: pointer;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; padding: 3px 11px; cursor: pointer;
   font-family: var(--serif); font-size: 14px; color: var(--ink-soft);
+  box-shadow: 0 1px 2px rgba(70, 45, 15, .12);
 }
 .chapters .tab .num { color: var(--ink-faint); margin-right: 2px; }
-.chapters .tab:hover { color: var(--ink); }
-.chapters .tab.active { color: var(--rubric); }
+.chapters .tab:hover { color: var(--ink); border-color: var(--ink-faint); }
+.chapters .tab.active { color: var(--rubric); background: var(--rubric-soft); border-color: #d3aca1; box-shadow: none; }
 .chapters .tab.active .num { color: var(--rubric); }
-.chapters .tab.active::after { content: ""; display: block; height: 1px; background: currentColor; margin-top: 2px; }
 
 /* ---------- Sheets of paper ---------- */
 main { padding-top: 26px; padding-bottom: 40px; }
@@ -117,11 +119,12 @@ main { padding-top: 26px; padding-bottom: 40px; }
 /* ---------- Choosing a passage ---------- */
 .contents { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 0; margin-bottom: 26px; }
 .contents .chip {
-  background: none; border: 0; cursor: pointer; padding: 2px 0;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: 3px; cursor: pointer; padding: 1px 10px;
+  box-shadow: 0 1px 2px rgba(70, 45, 15, .12);
   font: italic 17px var(--serif); color: var(--ink-soft);
 }
 .contents .chip:not(:last-child)::after { display: inline-block; content: "·"; color: var(--ink-faint); font-style: normal; margin: 0 10px; }
-.contents .chip:hover { color: var(--ink); }
+.contents .chip:hover { color: var(--ink); border-color: var(--ink-faint); }
 .contents .chip.active { color: var(--rubric); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 
 .epigraph { margin: 0; padding: 0 0 0 34px; position: relative; }
@@ -145,32 +148,33 @@ textarea:focus, #lookup-input:focus { outline: none; border-bottom-color: var(--
 /* ---------- Buttons ---------- */
 button { font-family: var(--serif); cursor: pointer; }
 .mini {
-  background: none; border: 0; padding: 3px 0; color: var(--rubric);
-  font-size: 12px; border-bottom: 1px solid transparent;
+  background: var(--sheet); border: 1px solid #d3aca1; border-radius: 3px; padding: 2px 8px; color: var(--rubric);
+  font-size: 12px; box-shadow: 0 1px 2px rgba(70, 45, 15, .12);
 }
-.mini:hover { border-bottom-color: var(--rubric); }
+.mini:hover { background: var(--rubric-soft); border-color: var(--rubric); }
 .mini.loading { opacity: .45; cursor: progress; }
-.mini + .mini { margin-left: 16px; }
+.mini + .mini { margin-left: 8px; }
 button[type="submit"] {
   background: var(--ink); color: var(--sheet); border: 1px solid var(--ink); border-radius: 2px;
   padding: 10px 18px; font-size: 13px; white-space: nowrap;
 }
 button[type="submit"]:hover { background: var(--rubric); border-color: var(--rubric); }
 button:disabled { opacity: .5; cursor: not-allowed; }
+.mini:active, .chip:active, .tab:active, .w:active, button[type="submit"]:active { transform: translateY(1px); box-shadow: none; }
 :focus-visible { outline: 2px solid var(--rubric); outline-offset: 3px; }
 
 /* ---------- The recorder: a wax seal ---------- */
 .recorder { display: flex; align-items: center; justify-content: center; gap: 22px; margin-top: 30px; flex-wrap: wrap; }
 .record {
-  width: 84px; height: 84px; border-radius: 50%; border: 0; display: grid; place-items: center;
+  width: 54px; height: 54px; border-radius: 50%; border: 0; display: grid; place-items: center;
   background: radial-gradient(circle at 34% 28%, #c0584a 0%, #9a3326 45%, #6f1e15 100%);
   box-shadow: inset 0 -4px 8px rgba(0,0,0,.28), inset 0 3px 6px rgba(255,220,200,.25),
               0 0 0 5px #e9d6c5, 0 0 0 6px #c9a993, 0 6px 14px -4px rgba(90,30,15,.5);
   transition: transform .12s ease;
 }
 .record:active { transform: scale(.96); }
-.record .dot { width: 26px; height: 26px; border-radius: 50%; background: #f6e9dd; box-shadow: inset 0 1px 2px rgba(0,0,0,.3); transition: all .15s; }
-.record.recording .dot { border-radius: 3px; width: 22px; height: 22px; }
+.record .dot { width: 17px; height: 17px; border-radius: 50%; background: #f6e9dd; box-shadow: inset 0 1px 2px rgba(0,0,0,.3); transition: all .15s; }
+.record.recording .dot { border-radius: 3px; width: 14px; height: 14px; }
 .record.recording { animation: breathe 1.6s ease-in-out infinite; }
 .record.busy { filter: grayscale(.85) brightness(1.05); animation: none; }
 @keyframes breathe {
@@ -178,6 +182,16 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   50% { box-shadow: inset 0 -4px 8px rgba(0,0,0,.28), 0 0 0 10px #f0dfd2, 0 0 0 11px #c9a993, 0 6px 14px -4px rgba(90,30,15,.5); }
 }
 .rec-info { min-width: 170px; }
+/* Practice: 1. listen to the American version, 2. record yourself. */
+.tip { text-align: center; color: var(--ink-soft); font-style: italic; margin: 26px 0 0; }
+.step { display: flex; align-items: center; gap: 12px; }
+.step .rec-info { min-width: 110px; margin-left: 10px; }
+.step[hidden], .step-num[hidden] { display: none; }
+.step-num {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--rule); color: var(--ink-faint); font-size: 13px; font-variant-numeric: lining-nums;
+}
+
 #rec-state { font-style: italic; font-size: 19px; }
 .timer { color: var(--ink-faint); font-variant-numeric: lining-nums tabular-nums; font-size: 15px; letter-spacing: .06em; }
 #playback { height: 34px; flex: 1 1 240px; max-width: 320px; filter: sepia(.35) saturate(.8); }
@@ -211,7 +225,8 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   border-top: 1px solid var(--rule-soft); border-bottom: 1px solid var(--rule-soft);
 }
 .w {
-  background: none; border: 0; border-radius: 3px; padding: 4px 6px 2px; color: var(--ink);
+  background: #fffdf8; border: 1px solid var(--rule); border-radius: 3px; padding: 3px 5px 1px; color: var(--ink);
+  box-shadow: 0 1px 2px rgba(70, 45, 15, .1);
   display: inline-flex; flex-direction: column; align-items: center; line-height: 1.2;
   transition: background .12s;
 }
@@ -219,7 +234,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .w small { font-size: 13px; font-style: italic; color: var(--ink-faint); margin-top: 6px; }
 .w.fair small { color: var(--fair); }
 .w.poor small { color: var(--poor); }
-.w:hover { background: var(--rule-soft); }
+.w:hover { background: var(--rule-soft); border-color: var(--ink-faint); }
 .w.selected { background: var(--rubric-soft); box-shadow: 0 0 0 1px #e2bdb1 inset; }
 
 /* ---------- A dictionary entry for one word ---------- */
@@ -299,7 +314,7 @@ body:not(.show-ipa) .ipa-only { display: none !important; }
 @media (max-width: 600px) {
   body { font-size: 18px; }
   .masthead { padding-top: 28px; }
-  .chapters { gap: 2px 16px; }
+  .chapters { gap: 6px 8px; }
   .sheet { padding: 24px 16px 28px; }
   .epigraph { padding-left: 22px; }
   .epigraph::before { font-size: 60px; top: -12px; left: -8px; }

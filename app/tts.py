@@ -20,7 +20,7 @@ from .lexicon import american_surface, base, is_vowel, lookup, number_to_words, 
 MODEL_REPO = "hexgrad/Kokoro-82M"
 VOICE = os.environ.get("ACCENT_VOICE", "af_heart")  # American English voices start with "a"
 SAMPLE_RATE = 24_000
-SPEEDS = {"normal": 0.95, "slow": 0.7}
+SPEED = 0.95
 MAX_PHONEMES = 500  # Kokoro's limit is 510 per chunk
 
 # ARPAbet -> Kokoro's (misaki) American phoneme alphabet.
@@ -124,11 +124,11 @@ class Speaker:
         self.model = KModel(repo_id=MODEL_REPO).eval()
         self.voice = torch.load(hf_hub_download(MODEL_REPO, f"voices/{voice}.pt"), weights_only=True)
         self._lock = threading.Lock()
-        self._cache: OrderedDict[tuple[str, str], bytes] = OrderedDict()
+        self._cache: OrderedDict[str, bytes] = OrderedDict()
 
-    def wav(self, text: str, speed: str = "normal") -> bytes:
+    def wav(self, text: str) -> bytes:
         """Speak `text` and return a WAV file. Results are cached (most recent 200)."""
-        key = (text.strip(), speed)
+        key = text.strip()
         with self._lock:
             if key in self._cache:
                 self._cache.move_to_end(key)
@@ -139,7 +139,7 @@ class Speaker:
                     continue
                 ref_s = self.voice[min(len(ps), len(self.voice)) - 1]
                 with self.torch.inference_mode():
-                    audio = self.model(ps, ref_s, SPEEDS[speed])
+                    audio = self.model(ps, ref_s, SPEED)
                 pieces.append(audio.float().cpu().numpy())
                 pieces.append(np.zeros(int(0.12 * SAMPLE_RATE), dtype=np.float32))
             data = _encode(np.concatenate(pieces) if pieces else np.zeros(1, dtype=np.float32))

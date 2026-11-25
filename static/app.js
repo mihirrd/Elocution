@@ -22,11 +22,11 @@ function stopAudio() {
   if (currentClip) { try { currentClip.stop(); } catch { /* already ended */ } currentClip = null; }
   $("playback").pause();
 }
-function speak(text, slow = false, btn = null) {
+function speak(text, btn = null) {
   text = text.trim();
   if (!text) return;
   stopAudio();
-  const audio = new Audio(`/api/speak?text=${encodeURIComponent(text)}&slow=${slow ? 1 : 0}`);
+  const audio = new Audio(`/api/speak?text=${encodeURIComponent(text)}`);
   voice = audio;
   if (btn) btn.classList.add("loading");
   const done = () => btn && btn.classList.remove("loading");
@@ -58,6 +58,7 @@ function setTab(tab) {
   $("lookup-panel").hidden = tab !== "lookup";
   $("practice-controls").hidden = tab !== "practice";
   $("free-controls").hidden = tab !== "free";
+  $("listen-step").hidden = $("step-num-2").hidden = tab !== "practice";
   $("results").hidden = tab === "lookup" || !state.result || state.result.mode !== (tab === "practice" ? "target" : "free");
 }
 
@@ -77,7 +78,7 @@ async function pollStatus() {
 pollStatus();
 
 /* ---------- Practice sentences ---------- */
-// A random sentence from the practice list; "New sentence" draws another, without repeating
+// A random sentence from the practice list; "Get new sentence" draws another, without repeating
 // any until the whole list has been seen.
 let practiceQueue = [];
 let practiceAll = [];
@@ -95,7 +96,7 @@ async function loadSentences() {
   practiceAll = await (await fetch("/api/sentences")).json();
   const b = document.createElement("button");
   b.className = "chip";
-  b.textContent = "New sentence";
+  b.textContent = "Get new sentence";
   b.addEventListener("click", nextSentence);
   $("focus-chips").appendChild(b);
   nextSentence();
@@ -122,7 +123,7 @@ function updateTargetIpa() {
   }, 250);
 }
 $("target").addEventListener("input", updateTargetIpa);
-$("btn-listen-target").addEventListener("click", (e) => speak($("target").value, false, e.currentTarget));
+$("btn-listen-target").addEventListener("click", (e) => speak($("target").value, e.currentTarget));
 
 /* ---------- Recording ---------- */
 $("btn-record").addEventListener("click", () => (state.recording ? stopRecording() : startRecording()));
@@ -233,7 +234,7 @@ function renderResults(d) {
     const b = document.createElement("button");
     b.className = `w ${w.status}`;
     b.innerHTML = `<span class="wt">${esc(w.word)}</span><small>${w.known ? esc(w.respelling) : "—"}</small>`;
-    b.title = w.score == null ? "Not in dictionary" : `${w.score}%`;
+    b.title = w.score == null ? "Not in the dictionary" : `${w.score}%`;
     b.addEventListener("click", () => selectWord(i));
     chips.appendChild(b);
   });
@@ -290,7 +291,7 @@ function selectWord(i) {
 
   if (!w.known) {
     box.innerHTML = `<div class="wd-head"><span class="wd-word">${esc(w.word)}</span>
-      <span class="wd-buttons"><button class="mini" data-say="${esc(w.word)}">Listen</button></span></div>
+      <span class="wd-buttons"><button class="mini" data-say="${esc(w.word)}">American version</button></span></div>
       <p class="hint">Not in the dictionary.</p>`;
     bindSay(box);
     return;
@@ -314,9 +315,8 @@ function selectWord(i) {
     <div class="wd-head">
       <span class="wd-word">${esc(w.word)}<span class="badge ${w.status}">${w.score} of 100</span></span>
       <span class="wd-buttons">
-        <button class="mini" data-say="${esc(w.word)}">Listen</button>
-        <button class="mini" data-say="${esc(w.word)}" data-slow="1">Slowly</button>
-        ${w.start != null ? `<button class="mini" id="btn-mine">Yours</button>` : ""}
+        <button class="mini" data-say="${esc(w.word)}">American version</button>
+        ${w.start != null ? `<button class="mini" id="btn-mine">Your version</button>` : ""}
       </span>
     </div>
     <dl class="pron-grid">
@@ -339,7 +339,7 @@ function selectWord(i) {
 
 function bindSay(root) {
   root.querySelectorAll("[data-say]").forEach((b) =>
-    b.addEventListener("click", () => speak(b.dataset.say, b.dataset.slow === "1", b))
+    b.addEventListener("click", () => speak(b.dataset.say, b))
   );
 }
 
@@ -354,12 +354,12 @@ $("lookup-form").addEventListener("submit", async (e) => {
   if (!r.ok) { out.innerHTML = `<div class="error-box">${esc(d.detail)}</div>`; return; }
   const sentence = d.words.length > 1
     ? `<div class="lookup-sentence"><div class="respell-big">${esc(d.respelling)}</div><div class="ipa ipa-only">/${esc(d.ipa)}/</div>
-       <button class="mini" data-say="${esc(text)}">Listen</button></div>`
+       <button class="mini" data-say="${esc(text)}">American version</button></div>`
     : "";
   out.innerHTML = sentence + d.words.map((w) => w.known ? `
     <div class="lookup-card">
       <div class="wd-head"><span class="wd-word">${esc(w.word)}</span>
-        <span class="wd-buttons"><button class="mini" data-say="${esc(w.word)}">Listen</button><button class="mini" data-say="${esc(w.word)}" data-slow="1">Slowly</button></span></div>
+        <span class="wd-buttons"><button class="mini" data-say="${esc(w.word)}">American version</button></span></div>
       <dl class="pron-grid">
         <dt>Say it like</dt><dd><span class="respell-big">${esc(w.respelling)}</span></dd>
         <dt class="ipa-only">American IPA</dt><dd class="big ipa ipa-only">${esc(w.ipa)}</dd>
