@@ -1,18 +1,19 @@
-"""Connected-speech practice: score and voice a corpus sentence with its casual forms.
+"""Connected-speech practice: score and voice a corpus sentence with its connected forms.
 
-Each item of a sentence ("going to" -> G AA1 N AH0) becomes one scoring unit whose accepted
-pronunciations are the casual form first and the careful dictionary forms after it, so either is
-correct and the result says which one the speaker used. The voice says the casual form."""
+Each item of a sentence ("going to" -> [ˈɡʌnə]) becomes one scoring unit whose accepted
+pronunciations are the reference's connected forms first and the careful dictionary forms after
+them, so either is correct and the result says which one the speaker used. Scoring and the voice
+both read the reference's IPA (see ipa.py), so they say and accept exactly what is shown."""
 
 from __future__ import annotations
 
 import itertools
 import re
 
+from . import ipa
 from .connected_speech import topic
 from .lexicon import WordPron, all_pronunciations, american_surface, lookup, tokenize
-from .tts import FUNCTION_WORDS as TTS_FUNCTION_WORDS
-from .tts import word_to_kokoro, text_to_kokoro
+from .tts import text_to_kokoro
 
 MAX_CAREFUL = 6  # careful variants kept for a multi-word item (combinations of each word's variants)
 
@@ -60,6 +61,30 @@ def _careful(text: str) -> list[list[str]]:
     return [[p for part in combo for p in part] for combo in combos]
 
 
+def voice_ipa(item: dict) -> str:
+    """The IPA the voice says: the item's `say` (the reference's IPA with stress added) or the
+    reference's first connected form."""
+    return item.get("say") or ipa.forms(item["ipa"])[0]
+
+
+def casual_forms(item: dict) -> list[list[str]]:
+    """Every connected form the reference gives, as ARPAbet. Recognizers hear some of these
+    sounds as something else, so those spellings count too: a glottal stop [ʔ] as no T at all,
+    and a syllabic [n̩] / [l̩] as "ən" / "əl" (a full vowel there is still a mistake)."""
+    out: list[list[str]] = []
+    for f in [voice_ipa(item).strip("[]")] + ipa.forms(item["ipa"]):
+        variants = [f]
+        if "n̩" in f or "l̩" in f:
+            variants.append(f.replace("n̩", "ən").replace("l̩", "əl"))
+        if "ʔ" in f:
+            variants += [v.replace("ʔ", "") for v in variants]
+        for g in variants:
+            phones = ipa.to_arpabet(g)
+            if phones and phones not in out:
+                out.append(phones)
+    return out
+
+
 def prons(text: str, items: list[dict]) -> list[WordPron]:
     """The pronunciations to score `text` against, with each item as one unit."""
     from .lexicon import pronounce
@@ -69,24 +94,10 @@ def prons(text: str, items: list[dict]) -> list[WordPron]:
         if item is None:
             out.append(pronounce(unit))
             continue
-        casual = item["arpabet"].split()
         forms = casual_forms(item)
         variants = forms + [v for v in _careful(unit) if v not in forms]
-        out.append(WordPron(word=unit, phones=casual, surface=american_surface(casual), variants=variants))
+        out.append(WordPron(word=unit, phones=forms[0], surface=american_surface(forms[0]), variants=variants))
     return out
-
-
-def casual_forms(item: dict) -> list[list[str]]:
-    """The item's casual ARPAbet, plus, for a held T (ʔ in the IPA), the same without that T:
-    the catch in the throat is usually heard as no T at all ("right now" -> ry'-NOW)."""
-    phones = item["arpabet"].split()
-    forms = [phones]
-    if "ʔ" in item["ipa"]:
-        held = [p for k, p in enumerate(phones)
-                if not (p == "T" and (k + 1 == len(phones) or phones[k + 1] in {"N", "M", "B", "T"}))]
-        if held != phones:
-            forms.append(held)
-    return forms
 
 
 def form_used(phones: list[str], item: dict) -> str:
@@ -96,8 +107,13 @@ def form_used(phones: list[str], item: dict) -> str:
 _TOKEN_RE = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*|\d+|[.,!?;:—…]")
 
 
-def kokoro(text: str, items: list[dict]) -> str:
-    """Kokoro phonemes for `text`, with every item in its casual form ("I'm gonna call ya")."""
+def kokoro(text: str, items: list[dict], sentence_ipa: str | None = None) -> str:
+    """Kokoro phonemes for `text` in connected speech. With the reference's IPA for the whole
+    sentence (the worked examples), that is used as is; otherwise every item is said in its
+    connected form and the other words as usual."""
+    final = re.search(r"[.!?…]+$", text.strip())
+    if sentence_ipa:
+        return " ".join(ipa.to_kokoro(f) for f in ipa.forms(sentence_ipa)) + (final.group() if final else "")
     tokens = _TOKEN_RE.findall(text)
     words = [t for t in tokens if t[0].isalnum()]
     units = iter(group(words, items))
@@ -112,12 +128,7 @@ def kokoro(text: str, items: list[dict]) -> str:
             continue
         unit, item = next(units)
         n = len(unit.split())
-        if item is None:
-            parts.append(text_to_kokoro(unit))
-        else:
-            phones = item["arpabet"].split()
-            multi = sum(p[-1].isdigit() for p in phones) > 1
-            parts.append(word_to_kokoro(phones, multi or unit.lower() not in TTS_FUNCTION_WORDS))
+        parts.append(text_to_kokoro(unit) if item is None else ipa.to_kokoro(voice_ipa(item).strip("[]")))
         # skip the unit's words (and punctuation inside it: "yes, I can")
         while n and k < len(tokens):
             n -= tokens[k][0].isalnum()

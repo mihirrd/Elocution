@@ -18,13 +18,13 @@
 
   <nav class="chapters" role="tablist">
     <button class="tab active" data-tab="practice"><span class="num">I.</span> Practice</button>
-    <button class="tab" data-tab="connected"><span class="num">II.</span> Connected speech</button>
-    <button class="tab" data-tab="free"><span class="num">III.</span> Free speech</button>
+    <button class="tab" data-tab="connected"><span class="num">II.</span> Lessons</button>
+    <button class="tab" data-tab="free"><span class="num">III.</span> Open mic</button>
     <button class="tab" data-tab="lookup"><span class="num">IV.</span> Lookup</button>
   </nav>
 
   <main>
-    <!-- Connected speech: topics, then a topic's rule, items and sentences -->
+    <!-- Lessons (connected speech): topics, then a topic's rule, items and sentences -->
     <section id="connected-panel" class="sheet" hidden></section>
 
     <!-- Practice / connected speech / free speech share the recorder -->
@@ -43,12 +43,12 @@
       <div id="connected-controls" hidden>
         <figure class="epigraph">
           <p id="cs-sentence" class="cs-sentence"></p>
-          <figcaption><div class="ipa-line">Say it like <strong id="cs-spoken"></strong></div></figcaption>
+          <figcaption><div class="ipa-line">Sounds like <strong id="cs-spoken"></strong></div></figcaption>
         </figure>
         <p class="tip">First listen to the American version, then say it the same relaxed way.</p>
       </div>
       <div id="free-controls" hidden>
-        <p class="hint">Say anything.</p>
+        <p class="hint">Talk about anything you like, and Leviosa will show you which sounds to work on.</p>
       </div>
 
       <div class="recorder">
@@ -102,6 +102,8 @@
     </section>
 
     <section id="lookup-panel" class="sheet" hidden>
+      <p class="lookup-intro">Find out how Americans say any word or sentence.</p>
+      <p class="lookup-how">Type it below and press Look up. You'll see how to say it, sound by sound, and can press American version to hear it.</p>
       <form id="lookup-form" class="lookup-row">
         <input id="lookup-input" placeholder="Word or sentence" autocomplete="off" aria-label="Word or sentence to look up">
         <button type="submit">Look up</button>

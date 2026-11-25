@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import casual, recognizer, tts
-from .connected_speech import TOPICS
+from .connected_speech import GUIDE, PARTS, TOPICS
 from .feedback import analyze, phrase_pronunciation
 from .lexicon import tokenize
 from .phones import tokens_to_heard
@@ -98,7 +98,7 @@ def sentences():
 @app.get("/api/connected")
 def connected():
     """The connected-speech study material (see connected_speech.py)."""
-    return TOPICS
+    return {"guide": GUIDE, "parts": PARTS, "topics": TOPICS}
 
 
 @app.get("/api/connected/speak")
@@ -111,12 +111,13 @@ async def connected_speak(topic: str, sentence: int | None = None, item: int | N
         found = casual.sentence(topic, sentence)
         if found is None:
             raise HTTPException(404, "No such sentence.")
-        text, items = found[0]["text"], found[1]
+        text, items, sentence_ipa = found[0]["text"], found[1], found[0].get("ipa")
     elif item is not None and 0 <= item < len(t["items"]):
-        text, items = t["items"][item]["written"], [t["items"][item]]
+        it = t["items"][item]
+        text, items, sentence_ipa = it.get("example") or it["written"], [it], None  # weak forms: the example
     else:
         raise HTTPException(400, "Give a sentence or an item.")
-    ps = casual.kokoro(text, items)
+    ps = casual.kokoro(text, items, sentence_ipa)
     data = await asyncio.to_thread(lambda: speaker().wav_phonemes(ps))
     return Response(data, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
 
@@ -181,6 +182,7 @@ def _run_analysis(data: bytes, target: str, topic: str = "", sentence: int | Non
             raise ValueError("That practice sentence doesn't exist.")
         target, items = found[0]["text"], found[1]
         prons = casual.prons(target, items)
+        nudge = next(t["nudge"] for t in TOPICS if t["id"] == topic)
     mode = "connected" if topic else "target" if target.strip() else "free"
     text = transcript if mode == "free" else target
     if not tokenize(text):
@@ -192,8 +194,8 @@ def _run_analysis(data: bytes, target: str, topic: str = "", sentence: int | Non
         for w in result["words"]:
             item = by_unit.get(casual._norm(w["word"]))
             if item and w.get("known"):
-                w["item"] = {"written": item["written"], "spoken": item["spoken"],
-                             "used": casual.form_used(w["arpabet"].split(), item)}
+                w["item"] = {"written": item["written"], "spoken": item["spoken"] or item["ipa"],
+                             "used": casual.form_used(w["arpabet"].split(), item), "nudge": nudge}
     _save(data, target, transcript, heard, detail, result, measurements)
     result["mode"] = mode
     result["transcript"] = transcript

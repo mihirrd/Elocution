@@ -24,13 +24,16 @@ function stopAudio() {
   if (currentClip) { try { currentClip.stop(); } catch { /* already ended */ } currentClip = null; }
   $("playback").pause();
 }
+// Bump when the voice changes, so browsers fetch new audio instead of a cached clip.
+const VOICE_VERSION = 2;
+
 function speak(text, btn = null) {
   text = text.trim();
   if (text) speakUrl(`/api/speak?text=${encodeURIComponent(text)}`, btn);
 }
 function speakUrl(url, btn = null) {
   stopAudio();
-  const audio = new Audio(url);
+  const audio = new Audio(`${url}&v=${VOICE_VERSION}`);
   voice = audio;
   if (btn) btn.classList.add("loading");
   const done = () => btn && btn.classList.remove("loading");
@@ -43,9 +46,46 @@ const soundTile = (say, example) =>
   say ? `<span class="e">${esc(say)}</span>${example ? `<span class="ex">as in ${esc(example)}</span>` : ""}` : `<span class="e">+</span>`;
 
 /* ---------- Tabs ---------- */
+// Every screen has an address (#/practice, #/connected, #/connected/<topic>[/<sentence>]), so the
+// browser's back button, a mouse's back button and a phone's back swipe all work.
 document.querySelectorAll(".tab").forEach((btn) =>
-  btn.addEventListener("click", () => setTab(btn.dataset.tab))
+  btn.addEventListener("click", () => go(`#/${btn.dataset.tab}`))  // also: Lessons -> the topic list
 );
+
+function go(hash) {
+  if (location.hash === hash) applyRoute();
+  else location.hash = hash;
+}
+
+async function applyRoute() {
+  const [tab = "practice", topicId, sentence] = location.hash.replace(/^#\/?/, "").split("/");
+  if (!["practice", "connected", "free", "lookup"].includes(tab)) return go("#/practice");
+  if (tab !== "connected") return setTab(tab);
+  if (!state.topics && !(await loadTopics())) return setTab(tab);
+  const t = topicId && state.topics.find((x) => x.id === topicId);
+  if (!t) {
+    state.cs = null;
+    renderTopicList();
+    setTab(tab);
+    return scrollToTop();
+  }
+  if (state.shownTopic !== t.id) {
+    renderTopic(t);
+    scrollToTop();
+  }
+  const k = Number(sentence);
+  if (sentence !== undefined && t.sentences[k]) chooseSentence(t, k, false);
+  else {
+    state.cs = null;
+    document.querySelectorAll("#connected-panel [data-sentence]").forEach((b) => b.classList.remove("active", "match"));
+    setTab(tab);
+  }
+}
+window.addEventListener("hashchange", applyRoute);
+
+function scrollToTop() {
+  window.scrollTo({ top: 0 });
+}
 function setTab(tab) {
   state.tab = tab;
   document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
@@ -58,7 +98,6 @@ function setTab(tab) {
   $("listen-step").hidden = $("step-num-2").hidden = tab !== "practice" && tab !== "connected";
   const mode = { practice: "target", connected: "connected", free: "free" }[tab];
   $("results").hidden = tab === "lookup" || !state.result || state.result.mode !== mode;
-  if (tab === "connected" && !state.topics) loadTopics();
 }
 
 /* ---------- Model status ---------- */
@@ -395,81 +434,105 @@ $("btn-retry").addEventListener("click", () => {
 });
 
 /* ---------- Connected speech ---------- */
-const LEVELS = {
-  1: ["Everyone does this", "even in careful speech"],
-  2: ["Everyday speech", "how most Americans talk"],
-  3: ["Casual speech", "with friends and family"],
+// Content follows "American English Connected Speech: A Complete Reference" (app/connected_speech.py).
+const REGISTER = {
+  all: "Happens in all natural speech, including careful speech",
+  casual: "Grows stronger as speech gets faster and more casual",
 };
 
 async function loadTopics() {
   const box = $("connected-panel");
   box.innerHTML = `<p class="hint">Loading…</p>`;
   try {
-    state.topics = await (await fetch("/api/connected")).json();
+    state.corpus = await (await fetch("/api/connected")).json();
+    state.topics = state.corpus.topics;
   } catch {
     box.innerHTML = `<div class="error-box">Couldn't load the lessons. Try again in a moment.</div>`;
-    return;
+    return false;
   }
-  renderTopicList();
+  return true;
 }
+
+const topicName = (t) => (t.number ? `${t.number}. ` : "") + t.title;
+const topicById = (id) => state.topics.find((t) => t.id === id);
 
 function renderTopicList() {
+  const { guide, parts } = state.corpus;
   const box = $("connected-panel");
-  const byLevel = [1, 2, 3].map((lvl) => {
-    const topics = state.topics.filter((t) => t.level === lvl);
-    if (!topics.length) return "";
-    return `<h3 class="cs-level">${LEVELS[lvl][0]}<small>${LEVELS[lvl][1]}</small></h3>
-      <div class="cs-topics">${topics.map((t) =>
-        `<button class="cs-topic" data-topic="${esc(t.id)}"><b>${esc(t.title)}</b><span>${esc(t.rule)}</span></button>`).join("")}</div>`;
+  const card = (t) => `<button class="cs-topic" data-topic="${esc(t.id)}">
+      <b>${t.number ? `<span class="num">${t.number}</span>` : ""}${esc(t.title)}</b><span>${esc(t.rule)}</span></button>`;
+  const start = guide.priority.map(([label, ids]) => `<li><span>${esc(label)}</span>
+      ${ids.map((id) => `<a class="mini" href="#/connected/${esc(id)}">${esc(topicName(topicById(id)))}</a>`).join("")}</li>`).join("")
+    + `<li><span>${esc(guide.priority_rest)}</span></li>`;
+  const partsHtml = parts.map((p) => {
+    const topics = state.topics.filter((t) => t.part === p.id);
+    return `<section class="cs-part">
+      <h3 class="cs-level">${esc(p.title)}<small>${esc(REGISTER[p.register])}</small></h3>
+      <p class="cs-part-text">${esc(p.text)}</p>
+      <div class="cs-topics">${topics.map(card).join("")}</div></section>`;
   }).join("");
-  box.innerHTML = `<p class="cs-intro">Americans don't say words one at a time. Learn how they join, shrink and drop sounds, then say it the same way.</p>${byLevel}`;
-  box.querySelectorAll("[data-topic]").forEach((b) => b.addEventListener("click", () => openTopic(b.dataset.topic)));
+  box.innerHTML = `
+    <p class="cs-intro">${esc(guide.intro)}</p>
+    <div class="cs-start"><h3 class="cs-level">Start here<small>the biggest gain per hour of practice</small></h3>
+      <ol>${start}</ol></div>
+    ${partsHtml}
+    <details class="cs-guide"><summary>How to practice</summary>
+      <ol>${guide.practice_method.map(([name, text]) => `<li><strong>${esc(name)}.</strong> ${esc(text)}</li>`).join("")}</ol>
+    </details>
+    <details class="cs-guide"><summary>Symbols and conventions</summary>
+      ${table(["Symbol", "Sound", "Example"], guide.symbols)}
+      <ul>${guide.conventions.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>
+    </details>`;
+  box.querySelectorAll("[data-topic]").forEach((b) => b.addEventListener("click", () => go(`#/connected/${b.dataset.topic}`)));
+  state.shownTopic = null;
 }
 
-function openTopic(id) {
-  const t = state.topics.find((x) => x.id === id);
+const table = (headers, rows) => `<table class="cs-table"><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>
+  <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+
+function renderTopic(t) {
   const box = $("connected-panel");
+  const part = state.corpus.parts.find((p) => p.id === t.part);
   const items = t.items.map((it, k) => `
     <div class="cs-item" role="button" tabindex="0" data-practice="${k}" title="Practice sentences with “${esc(it.written)}”">
-      <span class="from">${esc(it.written)} →</span>
-      <span class="to">${esc(it.spoken)}</span>
-      <span class="ipa">/${esc(it.ipa)}/</span>
-      ${it.note ? `<p class="note">${esc(it.note)}</p>` : ""}
+      ${it.example  // weak forms: the reference spells them inside its example phrase
+        ? `<span class="from">${esc(it.example)} →</span>
+           <span class="to">${esc(it.example_spoken)}</span>
+           <span class="detail">${esc(it.written)}: weak ${esc(it.ipa)} · ${esc(it.detail)}</span>`
+        : `<span class="from">${esc(it.written)} →</span>
+           <span class="to">${esc(it.spoken || it.ipa)}</span>
+           ${it.spoken ? `<span class="ipa">${esc(it.ipa)}</span>` : ""}
+           ${it.detail ? `<span class="detail">${esc(it.detail)}</span>` : ""}`}
       <button class="mini" data-item="${k}">American version</button>
       <span class="go">Practice ↓</span>
     </div>`).join("");
   const sentences = t.sentences.map((s, k) =>
-    `<li><button data-sentence="${k}">${esc(s.text)}<small>${esc(s.spoken)}</small></button></li>`).join("");
+    `<li><button data-sentence="${k}">${esc(s.text)}<small>${esc(s.spoken)}</small>${s.detail ? `<em>${esc(s.detail)}</em>` : ""}</button></li>`).join("");
   box.innerHTML = `
-    <button class="mini cs-back">← All topics</button>
-    <h2 class="cs-title">${esc(t.title)}</h2>
-    <span class="pc">${LEVELS[t.level][0]}</span>
+    <div class="cs-bar"><a class="mini cs-back" href="#/connected">← All topics</a><span>${esc(topicName(t))}</span></div>
+    <h2 class="cs-title">${esc(topicName(t))}</h2>
+    <span class="pc">${esc(part.title)} · ${esc(REGISTER[part.register])}</span>
+    ${t.nudge ? "" : `<p class="cs-optional">Optional: the clear, careful form is always correct too.</p>`}
     <p class="cs-rule">${esc(t.rule)}</p>
-    <p class="cs-how">${esc(t.how)}</p>
-    ${items ? `<h3 class="minor-title">Say it like this</h3><div class="cs-items">${items}</div>` : ""}
+    ${t.text ? `<p class="cs-text">${esc(t.text)}</p>` : ""}
+    ${t.notes.map((n) => `<p class="cs-how">${esc(n)}</p>`).join("")}
+    ${(t.tables || []).map((tb) => table(tb.headers, tb.rows)).join("")}
+    ${items ? `<h3 class="minor-title">Sounds like</h3><div class="cs-items">${items}</div>` : ""}
     <h3 class="minor-title">Practice sentences</h3>
     <ul class="cs-sentences">${sentences}</ul>`;
-  box.querySelector(".cs-back").addEventListener("click", () => {
-    state.cs = null;
-    $("results").hidden = true;
-    setTab("connected");
-    renderTopicList();
-    box.scrollIntoView({ behavior: "smooth", block: "start" });
-  });
   box.querySelectorAll("[data-item]").forEach((b) => b.addEventListener("click", (e) => {
     e.stopPropagation();  // play only; don't also jump to the sentences
     speakUrl(`/api/connected/speak?topic=${t.id}&item=${b.dataset.item}`, b);
   }));
   box.querySelectorAll("[data-practice]").forEach((card) => {
-    const go = () => practiceItem(t, +card.dataset.practice);
-    card.addEventListener("click", go);
-    card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    const goTo = () => practiceItem(t, +card.dataset.practice);
+    card.addEventListener("click", goTo);
+    card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); goTo(); } });
   });
   box.querySelectorAll("[data-sentence]").forEach((b) => b.addEventListener("click", () => chooseSentence(t, +b.dataset.sentence)));
+  state.shownTopic = t.id;
   state.cs = null;
   $("results").hidden = true;
-  setTab("connected");
-  box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // Jump to the practice sentences that use one item, mark them, and get the first one ready to record.
@@ -486,26 +549,31 @@ function practiceItem(t, k) {
 
 function chooseSentence(t, index, scroll = true) {
   const s = t.sentences[index];
+  const same = state.cs && state.cs.topic === t.id && state.cs.index === index;
   state.cs = { topic: t.id, index, sentence: s };
+  history.replaceState(null, "", `#/connected/${t.id}/${index}`);
   document.querySelectorAll("#connected-panel [data-sentence]").forEach((b) =>
     b.classList.toggle("active", +b.dataset.sentence === index));
   $("cs-sentence").textContent = s.text;
   $("cs-spoken").textContent = s.spoken;
-  $("results").hidden = true;
+  if (!same) $("results").hidden = true;
   hideError();
   setTab("connected");
   if (scroll) $("record-panel").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-// Which form the speaker used for each item: casual (the American way) or careful (still correct).
+// Which form the speaker used for each item: connected (as in the reference) or careful. Careful is
+// always correct; topics the reference marks optional (listening first, informal) don't nudge.
 function renderConnectedResult(d) {
   const box = $("cs-result");
   const items = d.mode === "connected" ? d.words.filter((w) => w.item) : [];
   box.hidden = !items.length;
   if (!items.length) return;
-  box.innerHTML = `<div class="label">Connected speech</div>` + items.map((w) => w.item.used === "casual"
-    ? `<p>✓ <strong>${esc(w.item.written)}</strong> → ${esc(w.item.spoken)}. You said it the American way.</p>`
-    : `<p class="careful"><strong>${esc(w.item.written)}</strong>: you said it in full. That's correct, but Americans say <strong>${esc(w.item.spoken)}</strong> here.</p>`).join("");
+  box.innerHTML = `<div class="label">Connected speech</div>` + items.map(({ item }) => {
+    if (item.used === "casual") return `<p>✓ <strong>${esc(item.written)}</strong> → ${esc(item.spoken)}. Connected, the American way.</p>`;
+    if (item.nudge) return `<p class="careful"><strong>${esc(item.written)}</strong>: you said it in full. That's correct, but in connected speech Americans say <strong>${esc(item.spoken)}</strong>.</p>`;
+    return `<p>✓ <strong>${esc(item.written)}</strong>: clear and correct. In fast speech you'll also hear <strong>${esc(item.spoken)}</strong>.</p>`;
+  }).join("");
 }
 
 /* ---------- Lookup ---------- */
@@ -544,4 +612,4 @@ document.addEventListener("keydown", (e) => {
 });
 
 loadSentences();
-setTab("practice");
+applyRoute();

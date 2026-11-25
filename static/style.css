@@ -114,7 +114,9 @@ main { padding-top: 26px; padding-bottom: 40px; }
 }
 .minor-title { color: var(--rubric); font-size: 13px; margin: 30px 0 8px; }
 .hint { color: var(--ink-soft); font-style: italic; margin: 0 0 8px; }
-#free-controls .hint { text-align: center; font-size: 22px; margin-top: 4px; }
+#free-controls .hint { text-align: center; font-size: 19px; margin-top: 4px; }
+.lookup-intro { text-align: center; font-size: 20px; font-style: italic; margin: 0; }
+.lookup-how { text-align: center; color: var(--ink-soft); font-size: 16px; margin: 6px 0 22px; }
 
 /* ---------- Choosing a passage ---------- */
 .contents { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 0; margin-bottom: 26px; }
@@ -298,7 +300,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .cs-topic:active { transform: translateY(1px); box-shadow: none; }
 .cs-topic b { display: block; font-size: 18px; font-style: italic; }
 .cs-topic span { display: block; color: var(--ink-soft); font-size: 15px; margin-top: 4px; line-height: 1.35; }
-.cs-back { margin-bottom: 18px; }
+/* The way back stays in view while a topic is scrolled. */
+.cs-bar {
+  position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 14px;
+  margin: -34px -46px 18px; padding: 12px 46px; background: var(--sheet); border-bottom: 1px solid var(--rule-soft);
+}
+.cs-bar span { color: var(--ink-faint); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.cs-back { text-decoration: none; display: inline-block; font-size: 13px; padding: 4px 10px; }
 .cs-title { margin: 0; font-size: 30px; font-weight: 600; font-style: italic; }
 .cs-title + .pc { color: var(--ink-faint); font-style: italic; }
 .cs-rule { font-size: 19px; margin: 12px 0 0; }
@@ -324,6 +332,25 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .cs-sentences button.match { box-shadow: inset 3px 0 0 #d3aca1; }
 .cs-sentences button.active { background: var(--rubric-soft); box-shadow: inset 3px 0 0 var(--rubric); }
 .cs-sentences small { display: block; color: var(--ink-faint); font-style: italic; font-size: 15px; }
+.cs-sentences em { display: block; color: var(--ink-soft); font-size: 14px; }
+.cs-topic b .num { display: inline; margin: 0 8px 0 0; color: var(--rubric); font-style: normal; font-size: 14px; }
+.cs-start { border: 1px solid var(--rule); border-left: 4px solid var(--rubric); background: #fffdf8; padding: 4px 18px 12px; margin: 18px 0 8px; }
+.cs-start .cs-level { margin-top: 12px; }
+.cs-start ol { margin: 0; padding-left: 22px; }
+.cs-start li { margin: 6px 0; }
+.cs-start li span { margin-right: 8px; }
+.cs-start a.mini { text-decoration: none; display: inline-block; margin: 2px 6px 2px 0; }
+.cs-part-text { color: var(--ink-soft); font-size: 16px; margin: -4px 0 12px; }
+.cs-text { margin: 8px 0 0; }
+.cs-rule { font-weight: 600; }
+.cs-optional { display: inline-block; margin: 10px 0 0; padding: 2px 10px; border: 1px solid var(--rule); border-radius: 3px; color: var(--good); font-size: 14px; font-style: italic; }
+.cs-item .detail { display: block; color: var(--ink-soft); font-size: 14px; margin-top: 3px; }
+.cs-table { width: 100%; border-collapse: collapse; margin: 14px 0 4px; font-size: 15px; }
+.cs-table th { text-align: left; color: var(--rubric); font-weight: 500; font-size: 13px; border-bottom: 1px solid var(--rule); padding: 6px 8px; }
+.cs-table td { border-bottom: 1px solid var(--rule-soft); padding: 6px 8px; vertical-align: top; }
+.cs-guide { margin-top: 22px; border-top: 1px solid var(--rule-soft); padding-top: 10px; }
+.cs-guide summary { cursor: pointer; color: var(--rubric); font-size: 15px; }
+.cs-guide li { margin: 6px 0; }
 .cs-sentence { font: italic 26px/1.4 var(--serif); margin: 0; padding: 2px 0 8px; border-bottom: 1px solid var(--rule); }
 .cs-result { margin: 24px 0 4px; padding: 12px 18px; border: 1px solid var(--rule); border-left: 4px solid var(--good); background: #fffdf8; }
 .cs-result .label { color: var(--good); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 4px; }
@@ -377,6 +404,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .masthead { padding-top: 28px; }
   .chapters { gap: 6px 8px; }
   .sheet { padding: 24px 16px 28px; }
+  .cs-bar { margin: -24px -16px 14px; padding: 10px 16px; }
   .epigraph { padding-left: 22px; }
   .epigraph::before { font-size: 60px; top: -12px; left: -8px; }
   textarea { font-size: 22px; }
