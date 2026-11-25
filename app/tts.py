@@ -47,6 +47,8 @@ def word_to_kokoro(phones: list[str], stressed: bool = True) -> str:
     out = []
     for i, p in enumerate(phones):
         b, st = base(p), stress(p)
+        if b == "OW" and st == 0 and i == len(phones) - 1 and i and is_vowel(phones[i - 1]) and stress(phones[i - 1]) == 1:
+            st = 2  # Rio, Leo: a final "o" right after a stressed vowel is swallowed unless it keeps some stress
         if b == "AH" and st == 0:
             # Syllabic L at the end of a word: little -> lˈɪɾᵊl
             sym = "ᵊ" if i == len(phones) - 2 and base(phones[-1]) == "L" else "ə"
@@ -133,6 +135,9 @@ class Speaker:
     def wav_phonemes(self, phonemes: str, key: str | None = None) -> bytes:
         """Speak a Kokoro phoneme string (see text_to_kokoro) and return a WAV file."""
         key = key or "/" + phonemes
+        if phonemes and phonemes.rstrip()[-1] not in ".!?…":
+            # End like a sentence: without it the voice clips a final vowel ("trio" -> "tri-uh").
+            phonemes = phonemes.rstrip() + "."
         with self._lock:
             if key in self._cache:
                 self._cache.move_to_end(key)
