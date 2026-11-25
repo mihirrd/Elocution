@@ -18,12 +18,16 @@
 
   <nav class="chapters" role="tablist">
     <button class="tab active" data-tab="practice"><span class="num">I.</span> Practice</button>
-    <button class="tab" data-tab="free"><span class="num">II.</span> Free speech</button>
-    <button class="tab" data-tab="lookup"><span class="num">III.</span> Lookup</button>
+    <button class="tab" data-tab="connected"><span class="num">II.</span> Connected speech</button>
+    <button class="tab" data-tab="free"><span class="num">III.</span> Free speech</button>
+    <button class="tab" data-tab="lookup"><span class="num">IV.</span> Lookup</button>
   </nav>
 
   <main>
-    <!-- Practice / free speech share the recorder -->
+    <!-- Connected speech: topics, then a topic's rule, items and sentences -->
+    <section id="connected-panel" class="sheet" hidden></section>
+
+    <!-- Practice / connected speech / free speech share the recorder -->
     <section id="record-panel" class="sheet">
       <div id="practice-controls">
         <div id="focus-chips" class="contents"></div>
@@ -35,6 +39,13 @@
         </figure>
         <p class="key">CAPS = stressed</p>
         <p class="tip">First listen to the American version, then record yourself saying the sentence.</p>
+      </div>
+      <div id="connected-controls" hidden>
+        <figure class="epigraph">
+          <p id="cs-sentence" class="cs-sentence"></p>
+          <figcaption><div class="ipa-line">Say it like <strong id="cs-spoken"></strong></div></figcaption>
+        </figure>
+        <p class="tip">First listen to the American version, then say it the same relaxed way.</p>
       </div>
       <div id="free-controls" hidden>
         <p class="hint">Say anything.</p>
@@ -67,6 +78,8 @@
           <button id="btn-retry" class="mini retry" hidden>Try again</button>
         </div>
       </div>
+
+      <aside id="cs-result" class="cs-result" hidden></aside>
 
       <aside id="focus" class="focus" hidden></aside>
 

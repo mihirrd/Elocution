@@ -393,7 +393,7 @@ def _heard_ipa(op: Op) -> str:
 
 
 def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
-            detail_heard: list[Heard] | None = None, measure=None) -> dict:
+            detail_heard: list[Heard] | None = None, measure=None, prons: list[WordPron] | None = None) -> dict:
     """Score `heard` against the expected pronunciation of `text`.
 
     `detail_heard`, when given, is a second recognizer's view of the same audio, used to
@@ -403,8 +403,11 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
     decide R color and T aspiration, which the recognizers can't hear."""
     from .lexicon import tokenize
 
-    words = words if words is not None else tokenize(text)
-    prons: list[WordPron] = [pronounce(w) for w in words]
+    if prons is not None:  # prepared units, e.g. "going to" as one (see casual.prons)
+        words = [p.word for p in prons]
+    else:
+        words = words if words is not None else tokenize(text)
+        prons = [pronounce(w) for w in words]
 
     expected: list[tuple[int, str]] = []
     for wi, p in enumerate(prons):

@@ -15,7 +15,8 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import recognizer, tts
+from . import casual, recognizer, tts
+from .connected_speech import TOPICS
 from .feedback import analyze, phrase_pronunciation
 from .lexicon import tokenize
 from .phones import tokens_to_heard
@@ -94,6 +95,32 @@ def sentences():
     return PRACTICE
 
 
+@app.get("/api/connected")
+def connected():
+    """The connected-speech study material (see connected_speech.py)."""
+    return TOPICS
+
+
+@app.get("/api/connected/speak")
+async def connected_speak(topic: str, sentence: int | None = None, item: int | None = None):
+    """A corpus sentence (or one item) in the American voice, with the casual forms."""
+    t = next((t for t in TOPICS if t["id"] == topic), None)
+    if t is None:
+        raise HTTPException(404, "No such topic.")
+    if sentence is not None:
+        found = casual.sentence(topic, sentence)
+        if found is None:
+            raise HTTPException(404, "No such sentence.")
+        text, items = found[0]["text"], found[1]
+    elif item is not None and 0 <= item < len(t["items"]):
+        text, items = t["items"][item]["written"], [t["items"][item]]
+    else:
+        raise HTTPException(400, "Give a sentence or an item.")
+    ps = casual.kokoro(text, items)
+    data = await asyncio.to_thread(lambda: speaker().wav_phonemes(ps))
+    return Response(data, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
+
+
 @app.get("/api/pronounce")
 def pronounce(text: str):
     if not tokenize(text):
@@ -122,7 +149,7 @@ def recognize(audio):
     return heard, tokens_to_heard(detail_tokens), detail_log_probs
 
 
-def score(audio, text: str, heard, detail, detail_log_probs) -> tuple[dict, list[dict]]:
+def score(audio, text: str, heard, detail, detail_log_probs, prons=None) -> tuple[dict, list[dict]]:
     """Score a recording against `text`. Returns (result, acoustic measurements as rows)."""
     detail_rec = recognizer.detail_recognizer()
     acoustics = Acoustics(audio, recognizer.SAMPLE_RATE, detail_log_probs, detail_rec.vocab,
@@ -134,10 +161,10 @@ def score(audio, text: str, heard, detail, detail_log_probs) -> tuple[dict, list
         measurements.extend(_flatten(m, chosen, words))
         return m
 
-    return analyze(text, heard, detail_heard=detail, measure=measure), measurements
+    return analyze(text, heard, detail_heard=detail, measure=measure, prons=prons), measurements
 
 
-def _run_analysis(data: bytes, target: str) -> dict:
+def _run_analysis(data: bytes, target: str, topic: str = "", sentence: int | None = None) -> dict:
     audio, _ = recognizer.load_audio(data)
     if len(audio) < recognizer.SAMPLE_RATE * 0.3:
         raise ValueError("The recording is too short or silent. Try again a little closer to the microphone.")
@@ -147,12 +174,26 @@ def _run_analysis(data: bytes, target: str) -> dict:
     heard, detail, detail_log_probs = recognize(audio)
     transcript = recognizer.transcriber().transcribe(audio)
 
-    mode = "target" if target.strip() else "free"
-    text = target if mode == "target" else transcript
+    prons, items = None, []
+    if topic:  # connected speech: the sentence and its casual forms come from the corpus
+        found = casual.sentence(topic, sentence if sentence is not None else -1)
+        if found is None:
+            raise ValueError("That practice sentence doesn't exist.")
+        target, items = found[0]["text"], found[1]
+        prons = casual.prons(target, items)
+    mode = "connected" if topic else "target" if target.strip() else "free"
+    text = transcript if mode == "free" else target
     if not tokenize(text):
         raise ValueError("I couldn't understand any words. Please speak a full sentence clearly.")
 
-    result, measurements = score(audio, text, heard, detail, detail_log_probs)
+    result, measurements = score(audio, text, heard, detail, detail_log_probs, prons)
+    if items:
+        by_unit = {casual._norm(u): it for u, it in casual.group(tokenize(text), items) if it}
+        for w in result["words"]:
+            item = by_unit.get(casual._norm(w["word"]))
+            if item and w.get("known"):
+                w["item"] = {"written": item["written"], "spoken": item["spoken"],
+                             "used": casual.form_used(w["arpabet"].split(), item)}
     _save(data, target, transcript, heard, detail, result, measurements)
     result["mode"] = mode
     result["transcript"] = transcript
@@ -168,10 +209,11 @@ def _run_analysis(data: bytes, target: str) -> dict:
         w["start"], w["end"] = span if span else (None, None)
     result["audio_wav"] = recognizer.to_wav_base64(audio)
 
-    if mode == "target":
+    if mode != "free":
         said = {w.lower() for w in tokenize(transcript)}
         for w in result["words"]:
-            w["understood"] = w["word"].lower() in said
+            # an item ("going to") counts as understood if any of its words was heard (or "gonna")
+            w["understood"] = any(part.lower() in said for part in w["word"].split()) or "item" in w
     return result
 
 
@@ -204,12 +246,13 @@ def _flatten(m: dict[str, dict[int, float]], chosen: list[tuple[int, str]], word
 
 
 @app.post("/api/analyze")
-async def analyze_audio(audio: UploadFile = File(...), target: str = Form("")):
+async def analyze_audio(audio: UploadFile = File(...), target: str = Form(""), topic: str = Form(""),
+                        sentence: int | None = Form(None)):
     data = await audio.read()
     if not data:
         raise HTTPException(400, "Empty recording.")
     try:
-        return await asyncio.to_thread(_run_analysis, data, target)
+        return await asyncio.to_thread(_run_analysis, data, target, topic, sentence)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
 

@@ -285,6 +285,51 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .notes li { margin-bottom: 6px; padding-left: 22px; text-indent: -22px; }
 .notes li::before { content: "☞"; color: var(--rubric); display: inline-block; width: 22px; text-indent: 0; }
 
+/* ---------- Connected speech ---------- */
+.cs-intro { text-align: center; color: var(--ink-soft); font-style: italic; font-size: 18px; max-width: 600px; margin: 0 auto 6px; }
+.cs-level { color: var(--rubric); font-size: 13px; margin: 28px 0 10px; }
+.cs-level small { color: var(--ink-faint); font-style: italic; font-size: 15px; text-transform: none; letter-spacing: 0; margin-left: 8px; }
+.cs-topics { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.cs-topic {
+  text-align: left; background: #fffdf8; border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(70, 45, 15, .12); color: var(--ink);
+}
+.cs-topic:hover { border-color: #d3aca1; background: var(--rubric-soft); }
+.cs-topic:active { transform: translateY(1px); box-shadow: none; }
+.cs-topic b { display: block; font-size: 18px; font-style: italic; }
+.cs-topic span { display: block; color: var(--ink-soft); font-size: 15px; margin-top: 4px; line-height: 1.35; }
+.cs-back { margin-bottom: 18px; }
+.cs-title { margin: 0; font-size: 30px; font-weight: 600; font-style: italic; }
+.cs-title + .pc { color: var(--ink-faint); font-style: italic; }
+.cs-rule { font-size: 19px; margin: 12px 0 0; }
+.cs-how { color: var(--ink-soft); margin: 8px 0 0; padding-left: 22px; text-indent: -22px; }
+.cs-how::before { content: "☞"; color: var(--rubric); display: inline-block; width: 22px; text-indent: 0; }
+.cs-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.cs-item { border: 1px solid var(--rule); border-radius: 3px; padding: 10px 12px; background: #fffdf8; cursor: pointer;
+  box-shadow: 0 1px 2px rgba(70, 45, 15, .12); position: relative; }
+.cs-item:hover { border-color: #d3aca1; background: var(--rubric-soft); }
+.cs-item:active { transform: translateY(1px); box-shadow: none; }
+.cs-item .go { position: absolute; right: 12px; bottom: 12px; color: var(--rubric); font-size: 13px; font-style: italic; }
+.cs-item .from { color: var(--ink-soft); font-style: italic; }
+.cs-item .to { display: block; font-size: 21px; font-weight: 600; margin: 2px 0; }
+.cs-item .ipa { display: block; color: var(--ink-faint); font-size: 14px; }
+.cs-item .note { color: var(--ink-soft); font-size: 14px; font-style: italic; margin: 6px 0 0; }
+.cs-item .mini { margin-top: 8px; }
+.cs-sentences { list-style: none; margin: 0; padding: 0; }
+.cs-sentences button {
+  width: 100%; text-align: left; background: none; border: 0; border-top: 1px solid var(--rule-soft); padding: 10px 8px;
+  color: var(--ink); font-size: 18px;
+}
+.cs-sentences button:hover { background: var(--rubric-soft); }
+.cs-sentences button.match { box-shadow: inset 3px 0 0 #d3aca1; }
+.cs-sentences button.active { background: var(--rubric-soft); box-shadow: inset 3px 0 0 var(--rubric); }
+.cs-sentences small { display: block; color: var(--ink-faint); font-style: italic; font-size: 15px; }
+.cs-sentence { font: italic 26px/1.4 var(--serif); margin: 0; padding: 2px 0 8px; border-bottom: 1px solid var(--rule); }
+.cs-result { margin: 24px 0 4px; padding: 12px 18px; border: 1px solid var(--rule); border-left: 4px solid var(--good); background: #fffdf8; }
+.cs-result .label { color: var(--good); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 4px; }
+.cs-result p { margin: 6px 0 0; }
+.cs-result .careful { color: var(--ink-soft); }
+
 /* ---------- Try again ---------- */
 .retry { margin-top: 10px; }
 

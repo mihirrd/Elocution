@@ -128,13 +128,17 @@ class Speaker:
 
     def wav(self, text: str) -> bytes:
         """Speak `text` and return a WAV file. Results are cached (most recent 200)."""
-        key = text.strip()
+        return self.wav_phonemes(text_to_kokoro(text), key=text.strip())
+
+    def wav_phonemes(self, phonemes: str, key: str | None = None) -> bytes:
+        """Speak a Kokoro phoneme string (see text_to_kokoro) and return a WAV file."""
+        key = key or "/" + phonemes
         with self._lock:
             if key in self._cache:
                 self._cache.move_to_end(key)
                 return self._cache[key]
             pieces = []
-            for ps in _chunks(text_to_kokoro(text)):
+            for ps in _chunks(phonemes):
                 if not ps:
                     continue
                 ref_s = self.voice[min(len(ps), len(self.voice)) - 1]

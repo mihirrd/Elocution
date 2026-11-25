@@ -126,6 +126,9 @@ def tokens_to_heard(tokens: list[tuple[str, float, float]]) -> list[Heard]:
             out.append(Heard("~" + TOKEN_ALIASES[tok], tok, s, e))
         elif tok.strip() and tok not in {"<pad>", "<s>", "</s>", "<unk>", "??"}:
             out.append(Heard("~" + tok, tok, s, e))
+        # "d" + "ʒ" is the J sound written in two pieces (did you -> "di d ʒə"): join it.
+        if len(out) >= 2 and out[-2].unit == "D" and out[-1].unit == "ZH":
+            out[-2:] = [Heard("JH", "dʒ", out[-2].start, out[-1].end)]
     return out
 
 
@@ -165,6 +168,8 @@ def substitution_cost(expected: str, heard: str, next_expected: str | None = Non
         return FOREIGN_NEAREST["ɾ"]["R"]  # a tapped R (Spanish "pero", many Indian accents)
 
     # Accepted American variants.
+    if exp == "DX" and heard in {"T", "D"}:
+        return 0.0  # a casual form written with the tap ("gotta" G AA1 DX AH0): T or D is fine too
     if heard == "DX" and exp in {"T", "D"}:
         return 0.0
     if flap_ok and exp == "T" and heard == "D":
