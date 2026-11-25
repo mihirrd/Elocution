@@ -347,3 +347,22 @@ def test_final_z_devoiced_only_at_the_end_of_the_sentence():
     assert end["words"][2]["issues"] == []
     mid = analyze("dogs are here", heard("d", "ɔ", "ɡ", "s", "ɑ", "ɹ", "h", "ɪ", "ɹ"))
     assert mid["words"][0]["issues"][0]["heard"] == "s"
+
+
+def test_password_protects_every_route(monkeypatch):
+    import base64
+
+    from fastapi.testclient import TestClient
+
+    from app import main
+
+    monkeypatch.setattr(main, "PASSWORD", "s3cret")
+    client = TestClient(main.app)
+    assert client.get("/api/sentences").status_code == 401
+    assert "Basic" in client.get("/").headers["www-authenticate"]
+    wrong = base64.b64encode(b"friend:nope").decode()
+    assert client.get("/api/sentences", headers={"Authorization": f"Basic {wrong}"}).status_code == 401
+    right = base64.b64encode(b"anyone:s3cret").decode()
+    assert client.get("/api/sentences", headers={"Authorization": f"Basic {right}"}).status_code == 200
+    monkeypatch.setattr(main, "PASSWORD", "")
+    assert client.get("/api/sentences").status_code == 200  # no password set: open, as before

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hmac
 import json
 import os
 import time
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -27,7 +29,29 @@ STATIC = Path(__file__).resolve().parent.parent / "static"
 # investigated and turned into test cases. Set ACCENT_SAVE_DIR="" to turn this off.
 SAVE_DIR = os.environ.get("ACCENT_SAVE_DIR", str(STATIC.parent / "recordings"))
 
+# When the app is reachable from the internet, ACCENT_PASSWORD puts every page and API call
+# behind the browser's built-in login box (HTTP Basic auth; any user name works). Unset: open.
+PASSWORD = os.environ.get("ACCENT_PASSWORD", "")
+
 app = FastAPI(title="American Accent Coach")
+
+
+@app.middleware("http")
+async def require_password(request: Request, call_next):
+    if PASSWORD:
+        supplied = ""
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("basic "):
+            try:
+                supplied = base64.b64decode(auth[6:]).decode("utf-8").partition(":")[2]
+            except (ValueError, UnicodeDecodeError):
+                supplied = ""
+        if not hmac.compare_digest(supplied.encode(), PASSWORD.encode()):
+            return Response("Password required.", status_code=401,
+                            headers={"WWW-Authenticate": 'Basic realm="Accent Coach", charset="UTF-8"'})
+    return await call_next(request)
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
