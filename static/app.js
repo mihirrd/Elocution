@@ -35,15 +35,6 @@ function speak(text, btn = null) {
   audio.play().catch(done);
 }
 
-/* ---------- IPA toggle (off by default; plain respelling is the main display) ---------- */
-function setIpa(on) {
-  document.body.classList.toggle("show-ipa", on);
-  $("toggle-ipa").checked = on;
-  try { localStorage.setItem("showIpa", on ? "1" : "0"); } catch { /* storage unavailable */ }
-}
-$("toggle-ipa").addEventListener("change", (e) => setIpa(e.target.checked));
-try { setIpa(localStorage.getItem("showIpa") === "1"); } catch { setIpa(false); }
-
 const soundTile = (say, example) =>
   say ? `<span class="e">${esc(say)}</span>${example ? `<span class="ex">as in ${esc(example)}</span>` : ""}` : `<span class="e">+</span>`;
 
@@ -118,7 +109,7 @@ function updateTargetIpa() {
       if (!r.ok) return;
       const d = await r.json();
       if ($("target").value.trim() !== text) return;  // the sentence changed while this was loading
-      $("target-ipa").innerHTML = `<strong>${esc(d.respelling)}</strong><span class="ipa-only"> &nbsp;·&nbsp; <span class="ipa">/${esc(d.ipa)}/</span></span>`;
+      $("target-ipa").innerHTML = `<strong>${esc(d.respelling)}</strong><span class="ipa target-ipa-line">/${esc(d.ipa)}/</span>`;
     } catch { /* ignore */ }
   }, 250);
 }
@@ -242,7 +233,7 @@ function renderResults(d) {
   const pats = d.patterns || [];
   $("patterns-box").hidden = pats.length === 0;
   $("patterns").innerHTML = pats
-    .map((p) => `<li><span class="pl">${esc(p.label)}<span class="ipa-only ipa pc"><br>${esc(p.label_ipa)}</span></span><span>${esc(p.tip)}${p.count > 1 ? ` <span class="pc">×${p.count}</span>` : ""}</span></li>`)
+    .map((p) => `<li><span class="pl">${esc(p.label)}<span class="ipa pc"><br>${esc(p.label_ipa)}</span></span><span>${esc(p.tip)}${p.count > 1 ? ` <span class="pc">×${p.count}</span>` : ""}</span></li>`)
     .join("");
 
   const worst = d.words.reduce((best, w, i) => (w.score != null && (best < 0 || w.score < d.words[best].score) ? i : best), -1);
@@ -300,7 +291,7 @@ function selectWord(i) {
   const phones = (w.phones || [])
     .map((p) => {
       const yours = p.status === "ok" ? "✓" : p.status === "missing" ? "missing" : `you: ${p.heard_say}`;
-      const ipa = `<span class="h ipa ipa-only">/${esc(p.expected || "+")}/ → /${esc(p.heard || "—")}/</span>`;
+      const ipa = `<span class="h ipa">/${esc(p.expected || "+")}/ → /${esc(p.heard || "—")}/</span>`;
       return `<div class="ph ${p.status}">${soundTile(p.expected_say, p.expected_example)}<span class="h">${esc(yours)}</span>${ipa}</div>`;
     })
     .join("");
@@ -322,10 +313,9 @@ function selectWord(i) {
     <dl class="pron-grid">
       <dt>Say it like</dt><dd class="respell-big">${esc(w.respelling)}</dd>
       <dt>You said</dt><dd>${esc(w.heard_respelling)}</dd>
-      <dt class="ipa-only">IPA (correct)</dt><dd class="big ipa ipa-only">${esc(w.ipa)}</dd>
-      <dt class="ipa-only">IPA (yours)</dt><dd class="ipa ipa-only">${esc(w.heard_ipa)}</dd>
-      <dt class="ipa-only">ARPAbet</dt><dd class="ipa-only" style="font-size:14px;font-family:ui-monospace,monospace">${esc(w.arpabet)}</dd>
-      ${w.variants && w.variants.length ? `<dt class="ipa-only">Also accepted</dt><dd class="ipa ipa-only">${w.variants.map(esc).join(", ")}</dd>` : ""}
+      <dt>IPA (correct)</dt><dd class="big ipa">${esc(w.ipa)}</dd>
+      <dt>IPA (yours)</dt><dd class="ipa">${esc(w.heard_ipa)}</dd>
+      ${w.variants && w.variants.length ? `<dt>Also accepted</dt><dd class="ipa">${w.variants.map(esc).join(", ")}</dd>` : ""}
     </dl>
     <div class="label">Sound by sound</div>
     <div class="phones">${phones}</div>
@@ -353,7 +343,7 @@ $("lookup-form").addEventListener("submit", async (e) => {
   const d = await r.json();
   if (!r.ok) { out.innerHTML = `<div class="error-box">${esc(d.detail)}</div>`; return; }
   const sentence = d.words.length > 1
-    ? `<div class="lookup-sentence"><div class="respell-big">${esc(d.respelling)}</div><div class="ipa ipa-only">/${esc(d.ipa)}/</div>
+    ? `<div class="lookup-sentence"><div class="respell-big">${esc(d.respelling)}</div><div class="ipa">/${esc(d.ipa)}/</div>
        <button class="mini" data-say="${esc(text)}">American version</button></div>`
     : "";
   out.innerHTML = sentence + d.words.map((w) => w.known ? `
@@ -362,9 +352,8 @@ $("lookup-form").addEventListener("submit", async (e) => {
         <span class="wd-buttons"><button class="mini" data-say="${esc(w.word)}">American version</button></span></div>
       <dl class="pron-grid">
         <dt>Say it like</dt><dd><span class="respell-big">${esc(w.respelling)}</span></dd>
-        <dt class="ipa-only">American IPA</dt><dd class="big ipa ipa-only">${esc(w.ipa)}</dd>
-        <dt class="ipa-only">ARPAbet</dt><dd class="ipa-only" style="font-size:14px;font-family:ui-monospace,monospace">${esc(w.arpabet)}</dd>
-        ${w.variants.length ? `<dt class="ipa-only">Also accepted</dt><dd class="ipa ipa-only">${w.variants.map(esc).join(", ")}</dd>` : ""}
+        <dt>American IPA</dt><dd class="big ipa">${esc(w.ipa)}</dd>
+        ${w.variants.length ? `<dt>Also accepted</dt><dd class="ipa">${w.variants.map(esc).join(", ")}</dd>` : ""}
       </dl>
       ${w.notes.length ? `<ul class="notes">${w.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
     </div>` : `<div class="lookup-card"><span class="wd-word">${esc(w.word)}</span> <span class="hint">not in the dictionary</span></div>`).join("");

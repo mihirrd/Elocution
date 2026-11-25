@@ -82,8 +82,6 @@ h1 .tagline { display: block; font-size: .5em; font-weight: 400; color: var(--in
 .status { font-size: 11px; }
 .status.loading { color: var(--fair); }
 .status.loading::before { content: "◌ "; }
-.toggle { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-.toggle input { accent-color: var(--rubric); }
 
 /* ---------- Chapters (tabs) ---------- */
 .chapters {
@@ -141,6 +139,7 @@ textarea:focus, #lookup-input:focus { outline: none; border-bottom-color: var(--
 #lookup-input::placeholder { color: var(--ink-faint); }
 .epigraph figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
 .ipa-line { color: var(--ink-soft); font-size: 17px; min-height: 1.5em; }
+.target-ipa-line { display: block; }
 .ipa-line strong { font-weight: 600; color: var(--ink); letter-spacing: .02em; }
 .key { color: var(--ink-faint); font-size: 11px; margin: 12px 0 0 34px; }
 
@@ -183,7 +182,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 .rec-info { min-width: 170px; }
 /* Practice: 1. listen to the American version, 2. record yourself. */
-.tip { text-align: center; color: var(--ink-soft); font-style: italic; margin: 26px 0 0; }
+.tip { text-align: center; color: var(--ink); font-style: italic; font-size: 21px; margin: 26px 0 0; }
 .step { display: flex; align-items: center; gap: 12px; }
 .step .rec-info { min-width: 110px; margin-left: 10px; }
 .step[hidden], .step-num[hidden] { display: none; }
@@ -308,7 +307,6 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ---------- IPA (hidden unless asked for) ---------- */
 .ipa { font-family: var(--ipa); font-style: normal; }
-body:not(.show-ipa) .ipa-only { display: none !important; }
 
 /* ---------- Small screens ---------- */
 @media (max-width: 600px) {
