@@ -77,26 +77,34 @@ async function pollStatus() {
 pollStatus();
 
 /* ---------- Practice sentences ---------- */
-async function loadSentences() {
-  const groups = await (await fetch("/api/sentences")).json();
-  const chips = $("focus-chips");
-  groups.forEach((g, gi) => {
-    const b = document.createElement("button");
-    b.className = "chip";
-    b.textContent = g.focus;
-    b.addEventListener("click", () => {
-      const idx = (Number(b.dataset.next) || 0) % g.sentences.length;
-      b.dataset.next = idx + 1;
-      chips.querySelectorAll(".chip").forEach((c) => c.classList.toggle("active", c === b));
-      setTarget(g.sentences[idx]);
-    });
-    chips.appendChild(b);
-    if (gi === 0) { b.dataset.next = 1; b.classList.add("active"); setTarget(g.sentences[0]); }
-  });
+// A random sentence from the practice list; "New sentence" draws another, without repeating
+// any until the whole list has been seen.
+let practiceQueue = [];
+let practiceAll = [];
+function nextSentence() {
+  if (!practiceQueue.length) {
+    practiceQueue = practiceAll.slice();
+    for (let i = practiceQueue.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [practiceQueue[i], practiceQueue[j]] = [practiceQueue[j], practiceQueue[i]];
+    }
+  }
+  setTarget(practiceQueue.pop());
 }
+async function loadSentences() {
+  practiceAll = await (await fetch("/api/sentences")).json();
+  const b = document.createElement("button");
+  b.className = "chip";
+  b.textContent = "New sentence";
+  b.addEventListener("click", nextSentence);
+  $("focus-chips").appendChild(b);
+  nextSentence();
+}
+
 let ipaTimer = null;
 function setTarget(text) {
   $("target").value = text;
+  $("target-ipa").textContent = "";  // don't show the previous sentence's pronunciation
   updateTargetIpa();
 }
 function updateTargetIpa() {
@@ -108,6 +116,7 @@ function updateTargetIpa() {
       const r = await fetch("/api/pronounce?text=" + encodeURIComponent(text));
       if (!r.ok) return;
       const d = await r.json();
+      if ($("target").value.trim() !== text) return;  // the sentence changed while this was loading
       $("target-ipa").innerHTML = `<strong>${esc(d.respelling)}</strong><span class="ipa-only"> &nbsp;·&nbsp; <span class="ipa">/${esc(d.ipa)}/</span></span>`;
     } catch { /* ignore */ }
   }, 250);
