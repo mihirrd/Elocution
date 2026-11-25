@@ -236,6 +236,8 @@ def to_respelling(phones: list[str], caps: bool = True) -> str:
         if (nucleus and is_vowel(a[-1]) and b and not is_vowel(b[0]) and stress(nucleus) in (1, 2)
                 and base(nucleus) in SHORT_CLOSED):
             a.append(b.pop(0))
+        elif nucleus and is_vowel(a[-1]) and base(nucleus) == "AO" and len(b) > 1 and base(b[0]) == "R":
+            a.append(b.pop(0))  # story -> STOR-ee, Florida -> FLOR-uh-duh
 
     out = []
     for syl in syls:
@@ -249,6 +251,8 @@ def to_respelling(phones: list[str], caps: bool = True) -> str:
                 st = stress(p)
                 if b in SHORT_CLOSED and closed and (b in SHORT_SPELLED or st != 0):
                     chunks.append(SHORT_CLOSED[b])
+                elif b == "AO" and nxt == "R":
+                    chunks.append("o")  # 'or' before R: report -> ree-PORT, more -> mor (not "mawr")
                 elif b == "AY" and vi > 0:
                     chunks.append("y")
                 else:
