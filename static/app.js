@@ -238,6 +238,7 @@ function renderResults(d) {
   const pats = d.patterns || [];
   const focus = pats.length && pats[0].confirmed ? pats[0] : null;
   const rest = focus ? pats.slice(1) : pats;
+  state.focus = focus;
   renderFocus(focus);
   $("patterns-box").hidden = rest.length === 0;
   $("patterns").innerHTML = rest
@@ -327,8 +328,13 @@ function selectWord(i) {
       return `<div class="ph ${p.status}">${soundTile(p.expected_say, p.expected_example)}<span class="h">${esc(yours)}</span>${ipa}</div>`;
     })
     .join("");
+  // The mistake already explained in "Fix this first" is only pointed to, not repeated.
+  const focus = state.focus;
+  const shown = focus && focus.words.some((fw) => fw.index === i) ? focus.tip : null;
   const issues = w.issues.length
-    ? `<ol class="issues">${w.issues.map((x) => x.confidence === "possible"
+    ? `<ol class="issues">${w.issues.map((x) => x.tip === shown
+        ? `<li class="${x.severity}">${esc(focus.label)}: see “Fix this first” above.</li>`
+        : x.confidence === "possible"
         ? `<li class="possible"><span class="maybe">Possibly</span>${esc(x.tip)}</li>`
         : `<li class="${x.severity}">${esc(x.tip)}</li>`).join("")}</ol>`
     : `<p class="ok-msg">Correct.</p>`;
