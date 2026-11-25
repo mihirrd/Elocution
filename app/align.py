@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .lexicon import base, is_vowel
-from .phones import Heard, deletion_cost, insertion_cost, is_vowel_unit, rhotic_pair_cost, substitution_cost
+from .phones import NON_AMERICAN_R, Heard, deletion_cost, reported_deletion_cost, insertion_cost, is_vowel_unit, rhotic_pair_cost, substitution_cost
 
 
 @dataclass
@@ -27,13 +27,15 @@ class Op:
         return "error"
 
 
-def align(expected: list[tuple[int, str]], heard: list[Heard], hard_t: bool = True) -> list[Op]:
+def align(expected: list[tuple[int, str]], heard: list[Heard], hard_t: bool = True,
+          ends_sentence: bool = True) -> list[Op]:
     """Weighted Needleman-Wunsch alignment. `expected` is [(word_index, phone), ...].
 
     `hard_t`: penalize a hard T where Americans flap it. Only meaningful for a recognizer
-    that distinguishes the flap from T."""
+    that distinguishes the flap from T. `ends_sentence`: whether the last expected phone ends
+    the sentence (False when aligning a single word from the middle of one)."""
     n, m = len(expected), len(heard)
-    sub = [(*_sub_context(expected, i), hard_t) for i in range(n)]
+    sub = [(*_sub_context(expected, i), hard_t, ends_sentence and i == n - 1) for i in range(n)]
     pos = [sum(1 for w, _ in expected[:i] if w == expected[i][0]) for i in range(n)]
     dele = [_del_context(expected, i) for i in range(n)]
     INF = float("inf")
@@ -70,7 +72,10 @@ def align(expected: list[tuple[int, str]], heard: list[Heard], hard_t: bool = Tr
             i, j = i - 1, j - 1
             cost = substitution_cost(expected[i][1], heard[j].unit, *sub[i])
             kind = "match" if cost <= 0.15 else "sub"
-            ops.append(Op(kind, expected[i][0], expected[i][1], heard[j], cost, pos[i]))
+            h = heard[j]
+            if base(expected[i][1]) == "R" and h.unit == "DX":
+                h = Heard("~ɾ", h.ipa, h.start, h.end)  # a tap where an R is due: tapped R
+            ops.append(Op(kind, expected[i][0], expected[i][1], h, cost, pos[i]))
         elif move == "P":
             i, j = i - 1, j - 2
             cost = rhotic_pair_cost(expected[i][1], heard[j].unit, heard[j + 1].unit)
@@ -78,7 +83,7 @@ def align(expected: list[tuple[int, str]], heard: list[Heard], hard_t: bool = Tr
                           _join(heard[j], heard[j + 1]), cost, pos[i]))
         elif move == "D":
             i -= 1
-            cost = deletion_cost(expected[i][1], *dele[i])
+            cost = reported_deletion_cost(expected[i][1], *dele[i])
             ops.append(Op("del", expected[i][0], expected[i][1], None, cost, pos[i]))
         else:
             j -= 1
@@ -102,15 +107,16 @@ def _sub_context(expected: list[tuple[int, str]], i: int) -> tuple[str | None, b
     return next_in_word, flap_ok
 
 
-def _del_context(expected: list[tuple[int, str]], i: int) -> tuple[str | None, str | None, bool]:
-    """(previous phone, next phone, whether this phone ends its word)."""
-    prv = expected[i - 1][1] if i > 0 else None
+def _del_context(expected: list[tuple[int, str]], i: int) -> tuple[str | None, str | None, bool, bool]:
+    """(previous phone, next phone, whether this phone ends its word, whether it starts it)."""
+    prv = expected[i - 1] if i > 0 else None
     nxt = expected[i + 1] if i + 1 < len(expected) else None
-    return prv, nxt[1] if nxt else None, nxt is None or nxt[0] != expected[i][0]
+    return (prv[1] if prv else None, nxt[1] if nxt else None, nxt is None or nxt[0] != expected[i][0],
+            prv is None or prv[0] != expected[i][0])
 
 
 def best_variant(word: int, variants: list[list[str]], ops: list[Op], before: str | None,
-                 hard_t: bool = True) -> tuple[list[str], list[Op]] | None:
+                 hard_t: bool = True, last_word: bool = False) -> tuple[list[str], list[Op]] | None:
     """Re-align the sounds heard for one word against each dictionary variant of it and
     return the closest (variant, ops), e.g. 'Wednesday' as -dee or -day."""
     span = [o.heard for o in ops if o.word == word and o.heard is not None]
@@ -118,7 +124,7 @@ def best_variant(word: int, variants: list[list[str]], ops: list[Op], before: st
     best = None
     for v in variants:
         exp = ([(-1, before)] if before else []) + [(word, p) for p in v]
-        local = [o for o in align(exp, span, hard_t) if o.word == word or o.kind == "ins"]
+        local = [o for o in align(exp, span, hard_t, ends_sentence=last_word) if o.word == word or o.kind == "ins"]
         for o in local:
             o.word = word
         cost = sum(o.cost for o in local)
@@ -144,6 +150,12 @@ def combine(primary: list[Op], detail: list[Op]) -> None:
                 o.confidence = "possible"
             continue
         d = by_pos.get((o.word, o.pos))
+        if (d is not None and d.heard is not None and d.heard.unit in NON_AMERICAN_R
+                and base(d.expected) == "R"):
+            # A rolled, tapped or throat R. The primary recognizer can't write these down and
+            # reports its nearest guess (D, L, a dropped sound) or calls it a good R.
+            o.kind, o.heard, o.cost, o.confidence = d.kind, d.heard, d.cost, "confirmed"
+            continue
         if o.severity != "ok":
             if d is None or d.severity == "ok":
                 o.confidence = "possible"

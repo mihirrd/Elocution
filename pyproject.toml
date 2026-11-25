@@ -8,6 +8,7 @@ dependencies = [
     "faster-whisper>=1.2.1",
     "kokoro>=0.9.4",
     "numpy>=2.5.4",
+    "praat-parselmouth>=0.4.7",
     "python-multipart>=0.0.32",
     "torch>=2.14.1",
     "transformers>=5.20.1",

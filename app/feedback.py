@@ -6,7 +6,7 @@ from collections import Counter
 
 from .align import Op, align, best_variant, combine
 from .lexicon import WordPron, american_surface, base, phone_ipa, pronounce, sound_name, stress, to_ipa
-from .phones import Heard, heard_respelling, unit_name
+from .phones import NON_AMERICAN_R, Heard, heard_respelling, unit_name
 
 # Tips for specific (expected, heard) confusions. Heard keys are ARPAbet, or "~ipa" for
 # non-English sounds.
@@ -21,11 +21,16 @@ PAIR_TIPS: dict[tuple[str, str], str] = {
     ("W", "V"): "That sounded like V. For W, don't touch the teeth: round the lips into a small circle ('oo') and open them quickly.",
     ("R", "L"): "That sounded like L. For R the tongue tip must NOT touch the roof of the mouth; pull it back and round the lips a little.",
     ("L", "R"): "That sounded like R. For L press the tongue tip firmly on the ridge behind the upper teeth.",
-    ("R", "~r"): "Your R was rolled or tapped. The American R has no tongue contact at all: curl the tip back (or bunch the tongue) and hold it.",
+    ("R", "~r"): "This wasn't an American R: it didn't have the R sound Americans make (your tongue tip probably touched the roof of the mouth, or stayed flat). Pull the tongue tip back so it touches nothing (or bunch the whole tongue up and back), round the lips slightly, and hold it, like the start of 'grrr'.",
+    ("R", "~ɾ"): "Your R was tapped: the tongue tip flicked the ridge behind your teeth once, like a quick D. The American R has no tongue contact at all: curl the tip back (or bunch the tongue), round the lips slightly, and hold it.",
     ("R", "~ʁ"): "Your R came from the throat. Make the American R with the front of the tongue curled back, not with the back of the throat.",
     ("R", "~ɽ"): "Your R was a flapped retroflex sound. Keep the tongue from touching anything and hold the R as a smooth glide.",
     ("T", "~ʈ"): "Your T was retroflex (tongue curled back). American T is made with the tongue tip on the ridge just behind the upper teeth.",
     ("D", "~ɖ"): "Your D was retroflex. Touch the tongue tip to the ridge behind the upper teeth instead of curling it back.",
+    ("L", "~l"): "Your L was a clear L, made with the tongue tip only. After a vowel (feel, milk, all, people), Americans use a 'dark' L: keep the tip on the ridge behind the teeth but also raise the back of the tongue toward the soft palate, so it sounds deeper and hollow, almost 'uhl'.",
+    ("P", "~p˭"): "Your P had no puff of air. At the start of a word or a stressed syllable (pin, paper, appear), Americans release P with a small burst of breath, almost 'p-h'. Hold a hand in front of your mouth: you should feel the air.",
+    ("K", "~k˭"): "Your K had no puff of air. At the start of a word or a stressed syllable (cat, keep, account), Americans release K with a small burst of breath, almost 'k-h'. Hold a hand in front of your mouth: you should feel the air.",
+    ("T", "~t˭"): "Your T had no puff of air. At the start of a word or a stressed syllable (time, today, attack), Americans release T with a small burst of breath, almost 't-h'. Hold a hand in front of your mouth: you should feel the air.",
     ("T", "~t̪"): "Your T was dental. Place the tongue tip a bit further back, on the ridge behind the teeth, and release with a puff of air.",
     ("V", "~ʋ"): "That was between V and W. For V, press the upper teeth firmly on the lower lip so the air buzzes audibly.",
     ("W", "~ʋ"): "That was between W and V. For W round the lips and keep the teeth away from the lip.",
@@ -49,7 +54,7 @@ PAIR_TIPS: dict[tuple[str, str], str] = {
     ("EY", "~e"): "Your A was a pure vowel. American 'ay' glides from 'eh' toward 'ee' (day sounds like 'deh-ee').",
     ("EY", "~eː"): "Your A was a pure vowel. American 'ay' glides from 'eh' toward 'ee'.",
     ("EY", "EH"): "You dropped the glide. Say 'ay' fully: 'eh-ee'.",
-    ("ER", "AH"): "You dropped the R color. The American 'er' (bird, her, teacher) is fully r-colored: hold the tongue in the R position through the vowel.",
+    ("ER", "AH"): "This 'er' was missing the American R sound. The American 'er' (bird, her, teacher) is fully r-colored: hold the tongue in the R position through the vowel.",
     ("ER", "EH"): "Make this an r-colored 'er' sound, not 'eh'. Pull the tongue back into the R shape for the whole vowel.",
     ("ER", "~a"): "Don't open to 'a'. The ending -er is an r-colored vowel: 'ur'.",
     ("Z", "S"): "That came out as S. Keep your voice buzzing for Z (put a hand on your throat; you should feel it vibrate).",
@@ -170,6 +175,66 @@ def _promote_likely_real(ops: list[Op]) -> None:
             o.confidence = "confirmed"
 
 
+NO_R_COLOR_COST = 0.65  # the clearest marker of a non-American accent: count it as a real error
+UNASPIRATED_COST = 0.45  # an accent feature: understood, but clearly not American
+CLEAR_L_COST = 0.45
+VW_COST = 0.6  # V/W confusion changes words (vest / west), so it counts as an error
+
+
+def _apply_acoustics(ops: list[Op], chosen: list[tuple[int, str]], m: dict[str, dict[int, float]]) -> None:
+    """Let the acoustic measurements (see acoustics.py) overrule the recognizers on the
+    features they can't hear: R color, aspiration of P / T / K, the dark L, and V / W."""
+    from .acoustics import CLEAR_L, CLEAR_R, DARK_L, GOP_FLAG, NO_R_COLOR, UNASPIRATED
+
+    pos = {}
+    for i, (wi, _) in enumerate(chosen):
+        pos[i] = (wi, sum(1 for w, _ in chosen[:i] if w == wi))
+    ratio_at = {pos[i]: r for i, r in m.get("r_color", {}).items()}
+    vot_at = {pos[i]: v for i, v in m.get("vot", {}).items()}
+    l_at = {pos[i]: v for i, v in m.get("l_f2", {}).items()}
+    gop_at = {pos[i]: v for i, v in m.get("vw_gop", {}).items()}
+    for o in ops:
+        if o.expected is None:
+            continue
+        l_f2 = l_at.get((o.word, o.pos))
+        if l_f2 is not None and base(o.expected) == "L":
+            if l_f2 <= DARK_L and o.severity != "ok":
+                # A dark L is often heard as "w" or as nothing ("all", "still"): it's the American L.
+                h = o.heard
+                start, end = (h.start, h.end) if h else (0.0, 0.0)
+                o.kind, o.cost, o.heard = "match", 0.0, Heard("L", "ɫ", start, end)
+            elif l_f2 >= CLEAR_L and o.severity == "ok" and o.heard is not None:
+                o.kind, o.cost, o.confidence = "sub", CLEAR_L_COST, "confirmed"
+                o.heard = Heard("~l", "l", o.heard.start, o.heard.end)
+            continue
+        if o.kind == "del" or o.heard is None:
+            continue
+        b = base(o.expected)
+        h = o.heard
+        ratio = ratio_at.get((o.word, o.pos))
+        if ratio is not None and ratio <= CLEAR_R:
+            if b == "R" and h.unit in NON_AMERICAN_R:
+                o.kind, o.cost, o.heard = "match", 0.0, Heard("R", "ɹ", h.start, h.end)
+        elif ratio is not None and ratio >= NO_R_COLOR:
+            if b == "R" and (o.severity == "ok" or h.unit in NON_AMERICAN_R):
+                ipa = h.ipa if h.unit in NON_AMERICAN_R else "r"
+                o.kind, o.cost, o.confidence = "sub", NO_R_COLOR_COST, "confirmed"
+                o.heard = Heard("~r", ipa, h.start, h.end)
+            elif b == "ER" and o.severity == "ok":
+                o.kind, o.cost, o.confidence = "sub", NO_R_COLOR_COST, "confirmed"
+                o.heard = Heard("AH", "ə", h.start, h.end)
+        gop = gop_at.get((o.word, o.pos))
+        if b in GOP_FLAG and gop is not None and gop >= GOP_FLAG[b] and o.severity == "ok":
+            # The Indian ʋ, between V and W: the recognizer's label said V/W, its probabilities didn't.
+            o.kind, o.cost, o.confidence = "sub", VW_COST, "confirmed"
+            o.heard = Heard("~ʋ", "ʋ", h.start, h.end)
+        vot = vot_at.get((o.word, o.pos))
+        if b in UNASPIRATED and vot is not None and vot <= UNASPIRATED[b] and o.severity == "ok":
+            sym = b.lower() + "˭"
+            o.kind, o.cost, o.confidence = "sub", UNASPIRATED_COST, "confirmed"
+            o.heard = Heard("~" + sym, sym, h.start, h.end)
+
+
 def _heard_ipa(op: Op) -> str:
     if op.heard is None:
         return ""
@@ -179,11 +244,14 @@ def _heard_ipa(op: Op) -> str:
 
 
 def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
-            detail_heard: list[Heard] | None = None) -> dict:
+            detail_heard: list[Heard] | None = None, measure=None) -> dict:
     """Score `heard` against the expected pronunciation of `text`.
 
     `detail_heard`, when given, is a second recognizer's view of the same audio, used to
-    confirm mistakes and to catch the flap T and non-English sounds (see align.combine)."""
+    confirm mistakes and to catch the flap T and non-English sounds (see align.combine).
+    `measure`, when given, takes the utterance's expected (word index, phone) list and the words,
+    and returns acoustic measurements per phone index (see acoustics.Acoustics.measure); they
+    decide R color and T aspiration, which the recognizers can't hear."""
     from .lexicon import tokenize
 
     words = words if words is not None else tokenize(text)
@@ -202,7 +270,8 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
         if len(p.variants) < 2:
             continue
         before = next((ph for w, ph in reversed(expected) if w < wi), None)
-        found = best_variant(wi, p.variants, ops, before, hard_t=not two_models)
+        last = wi == max(w for w, _ in expected)
+        found = best_variant(wi, p.variants, ops, before, hard_t=not two_models, last_word=last)
         if found:
             variant, local = found
             p.variants = [variant] + [v for v in p.variants if v != variant]
@@ -214,6 +283,9 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
         chosen = [(wi, ph) for wi, p in enumerate(prons) if p.phones for ph in p.phones]
         combine(ops, align(chosen, detail_heard))
         _promote_likely_real(ops)
+    if measure is not None and expected:
+        chosen = [(wi, ph) for wi, p in enumerate(prons) if p.phones for ph in p.phones]
+        _apply_acoustics(ops, chosen, measure(chosen, words))
 
     word_results = []
     issue_counter: Counter[tuple[str, str]] = Counter()

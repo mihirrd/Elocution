@@ -23,12 +23,20 @@ TOKEN_TO_ARPA: dict[str, list[str]] = {
     "iə": ["IY", "AH"], "ju": ["Y", "UW"],
 }
 
+# Variant spellings of the trilled R in the recognizer's vocabulary (palatalized, raised...).
+TOKEN_ALIASES = {"rʲ": "r", "r̝": "r", "r̝̊": "r"}
+
+# Non-American R sounds: when the detailed recognizer hears one of these where an R is due,
+# its verdict wins (the other recognizer has no symbol for them and reports a D, L, or nothing).
+NON_AMERICAN_R = {"~r", "~ɾ", "~ʁ", "~ʀ", "~ɽ", "~ɻ"}
+
 # Non-American sounds the recognizer can hear, with the English phone(s) they stand in for
 # and how far off they are (0 = perfect, 1 = clearly wrong). These are accent markers.
 FOREIGN_NEAREST: dict[str, dict[str, float]] = {
-    "r": {"R": 0.55, "DX": 0.2},        # trilled / tapped R
+    "r": {"R": 0.55, "DX": 0.2},        # trilled R
+    "ɾ": {"R": 0.55},                   # tapped R (only assigned when a tap stands where an R is due)
     "ʁ": {"R": 0.6}, "ʀ": {"R": 0.6}, "ɽ": {"R": 0.5, "D": 0.5}, "ɻ": {"R": 0.3},
-    "ʈ": {"T": 0.45}, "ɖ": {"D": 0.45}, "ɳ": {"N": 0.3}, "ɭ": {"L": 0.3},
+    "ʈ": {"T": 0.45}, "t˭": {"T": 0.45}, "l": {"L": 0.45}, "p˭": {"P": 0.45}, "k˭": {"K": 0.45}, "ɖ": {"D": 0.45}, "ɳ": {"N": 0.3}, "ɭ": {"L": 0.3},
     "t̪": {"T": 0.4, "TH": 0.6}, "d̪": {"D": 0.4, "DH": 0.6}, "s̪": {"S": 0.2},
     "ʋ": {"V": 0.5, "W": 0.5}, "β": {"V": 0.5, "B": 0.5},
     "x": {"HH": 0.55, "K": 0.6}, "χ": {"HH": 0.6}, "ç": {"HH": 0.5, "SH": 0.6}, "ħ": {"HH": 0.4},
@@ -48,8 +56,8 @@ FOREIGN_NEAREST: dict[str, dict[str, float]] = {
 
 # Plain names for non-English sounds (accent markers).
 FOREIGN_NAMES = {
-    "r": "rolled r", "ʁ": "throat r", "ʀ": "throat r", "ɽ": "flapped r", "ɻ": "curled r",
-    "ʈ": "curled-back t", "ɖ": "curled-back d", "ɳ": "curled-back n", "ɭ": "curled-back l",
+    "r": "non-American r", "ɾ": "tapped r", "ʁ": "throat r", "ʀ": "throat r", "ɽ": "flapped r", "ɻ": "curled r",
+    "ʈ": "curled-back t", "t˭": "t without a puff of air", "l": "clear l", "p˭": "p without a puff of air", "k˭": "k without a puff of air", "ɖ": "curled-back d", "ɳ": "curled-back n", "ɭ": "curled-back l",
     "t̪": "t on the teeth", "d̪": "d on the teeth", "ʋ": "sound between v and w", "β": "soft b",
     "x": "scratchy h", "χ": "scratchy h", "ç": "hissing h", "ɣ": "soft g", "ɸ": "soft f",
     "ɲ": "ny", "ʎ": "ly", "e": "flat e (no glide)", "eː": "flat e (no glide)",
@@ -114,6 +122,8 @@ def tokens_to_heard(tokens: list[tuple[str, float, float]]) -> list[Heard]:
             step = (e - s) / len(arpa)
             for i, a in enumerate(arpa):
                 out.append(Heard(a, tok if len(arpa) == 1 else _piece_ipa(a), s + i * step, s + (i + 1) * step))
+        elif tok in TOKEN_ALIASES:
+            out.append(Heard("~" + TOKEN_ALIASES[tok], tok, s, e))
         elif tok.strip() and tok not in {"<pad>", "<s>", "</s>", "<unk>", "??"}:
             out.append(Heard("~" + tok, tok, s, e))
     return out
@@ -132,7 +142,7 @@ def is_vowel_unit(unit: str) -> bool:
 
 
 def substitution_cost(expected: str, heard: str, next_expected: str | None = None, flap_ok: bool = False,
-                      hard_t: bool = True) -> float:
+                      hard_t: bool = True, phrase_final: bool = False) -> float:
     """Cost of hearing `heard` (a Heard.unit) where `expected` (ARPAbet with stress) was due.
 
     0 means correct (including accepted American variants), ~0.3-0.5 is an accent-level
@@ -150,6 +160,9 @@ def substitution_cost(expected: str, heard: str, next_expected: str | None = Non
         if near and exp in near:
             return near[exp]
         return 1.0 if is_vowel_unit(heard) == (exp in VOWELS) else 1.8
+
+    if exp == "R" and heard == "DX":
+        return FOREIGN_NEAREST["ɾ"]["R"]  # a tapped R (Spanish "pero", many Indian accents)
 
     # Accepted American variants.
     if heard == "DX" and exp in {"T", "D"}:
@@ -174,7 +187,9 @@ def substitution_cost(expected: str, heard: str, next_expected: str | None = Non
         return 1.8  # vowel <-> consonant: never treat as a substitution
     if frozenset((exp, heard)) in VOICING_PAIRS:
         if exp == "Z" and heard == "S" and next_expected is None:
-            return 0.3  # final Z devoicing is mild
+            # Americans devoice a final Z at the end of a sentence ("enemies.", "caves."); inside
+            # a sentence ("is a", "dogs and") an S is a mild accent feature.
+            return 0.1 if phrase_final else 0.3
         return 0.65
     if exp_v:
         return 0.8
@@ -195,7 +210,9 @@ def rhotic_pair_cost(expected: str, first: str, second: str) -> float | None:
 
 
 def deletion_cost(expected: str, prev_expected: str | None = None, next_expected: str | None = None,
-                  word_final: bool = False) -> float:
+                  word_final: bool = False, word_initial: bool = False) -> float:
+    """Cost of a missing sound, used for the alignment itself. (A missing word-initial TH is
+    judged afterwards: see reported_deletion_cost.)"""
     if word_final and next_expected and (
         base(next_expected) == base(expected) or frozenset((base(expected), base(next_expected))) in VOICING_PAIRS
     ):
@@ -205,6 +222,18 @@ def deletion_cost(expected: str, prev_expected: str | None = None, next_expected
     if base(expected) in {"HH"} or (stress(expected) == 0 and base(expected) == "AH"):
         return 0.7
     return 1.0
+
+
+def reported_deletion_cost(expected: str, prev_expected: str | None = None, next_expected: str | None = None,
+                           word_final: bool = False, word_initial: bool = False) -> float:
+    """How much a missing sound counts against the speaker, once the alignment is settled.
+
+    "the", "that", "them" inside a sentence: Americans often soften the TH until it merges into
+    the previous word ("where'uh", "in'uh"; measured on CMU ARCTIC). This must not lower the
+    alignment cost, or a D said for TH gets explained as a dropped TH plus an extra D."""
+    if base(expected) == "DH" and word_initial and prev_expected is not None:
+        return 0.1
+    return deletion_cost(expected, prev_expected, next_expected, word_final, word_initial)
 
 
 def insertion_cost(heard: str) -> float:

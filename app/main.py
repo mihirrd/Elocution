@@ -14,6 +14,7 @@ from . import recognizer, tts
 from .feedback import analyze, phrase_pronunciation
 from .lexicon import tokenize
 from .phones import tokens_to_heard
+from .acoustics import Acoustics
 from .segment import word_spans
 from .sentences import PRACTICE
 
@@ -73,6 +74,28 @@ async def speak(text: str, slow: bool = False):
     return Response(data, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
 
 
+def recognize(audio):
+    """Run both phoneme recognizers. Returns (primary heard, detail heard, detail log probs)."""
+    heard = tokens_to_heard(recognizer.phoneme_recognizer().recognize(audio))
+    detail_tokens, detail_log_probs = recognizer.detail_recognizer().recognize(audio, with_log_probs=True)
+    return heard, tokens_to_heard(detail_tokens), detail_log_probs
+
+
+def score(audio, text: str, heard, detail, detail_log_probs) -> tuple[dict, list[dict]]:
+    """Score a recording against `text`. Returns (result, acoustic measurements as rows)."""
+    detail_rec = recognizer.detail_recognizer()
+    acoustics = Acoustics(audio, recognizer.SAMPLE_RATE, detail_log_probs, detail_rec.vocab,
+                          detail_rec.blank, detail_rec.frame_sec)
+    measurements: list[dict] = []
+
+    def measure(chosen, words):
+        m = acoustics.measure(chosen, words)
+        measurements.extend(_flatten(m, chosen, words))
+        return m
+
+    return analyze(text, heard, detail_heard=detail, measure=measure), measurements
+
+
 def _run_analysis(data: bytes, target: str) -> dict:
     audio, _ = recognizer.load_audio(data)
     if len(audio) < recognizer.SAMPLE_RATE * 0.3:
@@ -80,10 +103,7 @@ def _run_analysis(data: bytes, target: str) -> dict:
 
     # Run the PyTorch models before Whisper: loading ctranslate2 (Whisper) before torch can
     # deadlock their thread pools on macOS.
-    heard = tokens_to_heard(recognizer.phoneme_recognizer().recognize(audio))
-    detail_rec = recognizer.detail_recognizer()
-    detail_tokens, detail_log_probs = detail_rec.recognize(audio, with_log_probs=True)
-    detail = tokens_to_heard(detail_tokens)
+    heard, detail, detail_log_probs = recognize(audio)
     transcript = recognizer.transcriber().transcribe(audio)
 
     mode = "target" if target.strip() else "free"
@@ -91,11 +111,12 @@ def _run_analysis(data: bytes, target: str) -> dict:
     if not tokenize(text):
         raise ValueError("I couldn't understand any words. Please speak a full sentence clearly.")
 
-    result = analyze(text, heard, detail_heard=detail)
+    result, _ = score(audio, text, heard, detail, detail_log_probs)
     result["mode"] = mode
     result["transcript"] = transcript
     # Where each word is, for "play your version". Times are on the analyzed (trimmed) audio,
     # which is sent back so the UI plays clips on exactly the same timeline.
+    detail_rec = recognizer.detail_recognizer()
     spans = word_spans(
         detail_log_probs, detail_rec.vocab, detail_rec.blank, detail_rec.frame_sec,
         [w["arpabet"].split() if w.get("known") else None for w in result["words"]],
@@ -110,6 +131,16 @@ def _run_analysis(data: bytes, target: str) -> dict:
         for w in result["words"]:
             w["understood"] = w["word"].lower() in said
     return result
+
+
+def _flatten(m: dict[str, dict[int, float]], chosen: list[tuple[int, str]], words: list[str]) -> list[dict]:
+    """Acoustic measurements as rows: {word, word_index, phone, kind, value}."""
+    rows = []
+    for kind, by_index in m.items():
+        for i, value in sorted(by_index.items()):
+            wi, phone = chosen[i]
+            rows.append({"word": words[wi], "word_index": wi, "phone": phone, "kind": kind, "value": value})
+    return rows
 
 
 @app.post("/api/analyze")
