@@ -196,13 +196,17 @@ function showError(msg) { $("error").textContent = msg; $("error").hidden = fals
 function hideError() { $("error").hidden = true; }
 
 /* ---------- Results ---------- */
-function verdictFor(score, features) {
-  const n = features === 1 ? "1 sound to fix" : `${features} sounds to fix`;
-  if (score >= 95 && features === 0) return "Excellent.";
-  if (score >= 95) return `Very close · ${n}`;
-  if (score >= 85) return `Light accent · ${n}`;
-  if (score >= 65) return `Noticeable accent · ${n}`;
-  return `Strong accent · ${n}`;
+const confirmed = (w) => (w.issues || []).filter((x) => x.confidence !== "possible");
+
+// Lead with what went right: "23 of 26 sounds American · 3 to fix".
+function verdictFor(d) {
+  const known = d.words.filter((w) => w.known && w.phones);
+  const total = known.reduce((n, w) => n + w.phones.filter((p) => p.expected).length, 0);
+  const toFix = known.reduce((n, w) => n + confirmed(w).length, 0);
+  const wrong = known.reduce((n, w) => n + confirmed(w).filter((x) => x.type !== "extra").length, 0);
+  if (!total) return "No words I could score.";
+  if (toFix === 0) return total === 1 ? "That sound is American." : `All ${total} sounds American. Excellent.`;
+  return `${total - wrong} of ${total} sounds American · ${toFix} to fix`;
 }
 
 function renderResults(d) {
@@ -211,8 +215,8 @@ function renderResults(d) {
   ring.style.setProperty("--p", d.overall);
   ring.style.setProperty("--c", d.overall >= 85 ? "var(--good)" : d.overall >= 60 ? "var(--fair)" : "var(--poor)");
   $("score").textContent = d.overall;
-  const features = d.words.reduce((n, w) => n + w.issues.filter((x) => x.confidence !== "possible").length, 0);
-  $("verdict").textContent = verdictFor(d.overall, features);
+  $("verdict").textContent = verdictFor(d);
+  $("btn-retry").hidden = d.mode !== "target";
   $("transcript").textContent = d.transcript ? `“${d.transcript}”` : "—";
   $("expected-respelling").textContent = d.expected_respelling;
   $("heard-respelling").textContent = d.heard_respelling;
@@ -258,10 +262,10 @@ function renderFocus(p) {
     .join(" ");
   box.innerHTML = `
     <div class="label">Fix this first</div>
+    <div class="focus-words">${words}</div>
     <p class="focus-title">${esc(p.label)} <span class="ipa pc">${esc(p.label_ipa)}</span></p>
     <p class="focus-why">${esc(p.why)}</p>
-    <p class="focus-tip">${esc(p.tip)}</p>
-    <div class="focus-words"><span class="pc">${p.words.length === 1 ? "In" : "In these words"}:</span> ${words}</div>`;
+    <p class="focus-tip">${esc(p.tip)}</p>`;
   box.querySelectorAll("[data-word]").forEach((b) =>
     b.addEventListener("click", () => {
       selectWord(+b.dataset.word);
@@ -360,6 +364,11 @@ function bindSay(root) {
     b.addEventListener("click", () => speak(b.dataset.say, b))
   );
 }
+
+$("btn-retry").addEventListener("click", () => {
+  $("record-panel").scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!state.recording) startRecording();
+});
 
 /* ---------- Lookup ---------- */
 $("lookup-form").addEventListener("submit", async (e) => {
