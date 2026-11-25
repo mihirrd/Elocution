@@ -366,3 +366,18 @@ def test_password_protects_every_route(monkeypatch):
     assert client.get("/api/sentences", headers={"Authorization": f"Basic {right}"}).status_code == 200
     monkeypatch.setattr(main, "PASSWORD", "")
     assert client.get("/api/sentences").status_code == 200  # no password set: open, as before
+
+
+def test_impact_ranks_word_changing_mistakes_first():
+    from app.feedback import HIGH, LOW, MEDIUM, _impact
+
+    assert _impact("V", "W", "very") == HIGH          # vest / west
+    assert _impact("IH1", "IY", "live") == HIGH       # live / leave
+    assert _impact("IH0", "IY", "rabbit") == MEDIUM   # unstressed: not a word contrast
+    assert _impact("TH", "T", "think") == MEDIUM      # noticeable, still understood
+    assert _impact("T", "~t˭", "time") == MEDIUM
+    assert _impact("L", "~l", "feel") == LOW          # finishing touch
+    assert _impact("AE1", "AH", "at") == LOW          # "at" → ət is normal reduction
+    assert _impact("K", "-", "walked") == HIGH        # dropped consonant changes the word
+    assert _impact("T", "-", "last", final=True) == MEDIUM
+    assert _impact("AH0", "-", "about") == LOW

@@ -95,6 +95,88 @@ PHONE_TIPS: dict[str, str] = {
 }
 
 
+# How much each mistake matters, so feedback can lead with the one worth fixing first
+# (functional load: Brown 1988, Munro & Derwing 2006, Sewell 2021). Keys are patterns as in
+# `analyze`: (expected, heard unit), (expected, "-") for a dropped sound, ("+", unit) for an extra.
+#   3  changes the word: confuses sounds that tell many words apart (vest / west, live / leave)
+#   2  understood, but one of the most noticeable parts of an accent (TH, the R, no puff of air)
+#   1  a finishing touch (the flap T, the dark L, pure vowels in "go" and "day")
+HIGH, MEDIUM, LOW = 3, 2, 1
+MINIMAL_PAIRS: dict[tuple[str, str], str] = {
+    ("V", "W"): "vest → west", ("W", "V"): "wine → vine", ("V", "B"): "very → berry",
+    ("V", "F"): "van → fan", ("F", "P"): "fine → pine", ("P", "F"): "pan → fan",
+    ("R", "L"): "right → light", ("L", "R"): "light → right",
+    ("P", "B"): "pin → bin", ("B", "P"): "bin → pin", ("T", "D"): "tie → die", ("D", "T"): "bed → bet",
+    ("K", "G"): "coat → goat", ("G", "K"): "bag → back",
+    ("S", "SH"): "sip → ship", ("SH", "S"): "ship → sip", ("CH", "SH"): "chip → ship",
+    ("N", "NG"): "thin → thing", ("NG", "N"): "thing → thin", ("JH", "Y"): "jet → yet", ("Y", "JH"): "yet → jet",
+    ("IH", "IY"): "live → leave", ("IY", "IH"): "leave → live", ("AE", "EH"): "bad → bed",
+    ("EH", "AE"): "bed → bad", ("AE", "AH"): "cat → cut", ("AE", "AA"): "cat → cot",
+    ("AH", "AA"): "cut → cot", ("AA", "AH"): "cot → cut", ("UH", "UW"): "full → fool",
+    ("UW", "UH"): "fool → full", ("EY", "EH"): "wait → wet", ("EH", "EY"): "wet → wait",
+}
+IMPACT: dict[tuple[str, str], int] = {
+    **{k: HIGH for k in MINIMAL_PAIRS},
+    **{(b, "~" + b.lower() + "˭"): MEDIUM for b in ("P", "T", "K")},
+    ("T", "T"): LOW, ("L", "~l"): LOW, ("T", "~ʈ"): LOW, ("D", "~ɖ"): LOW, ("T", "~t̪"): LOW,
+    ("OW", "~o"): LOW, ("OW", "~oː"): LOW, ("OW", "~əʊ"): LOW, ("EY", "~e"): LOW, ("EY", "~eː"): LOW,
+    ("AA", "~ɒ"): LOW, ("HH", "~x"): LOW,
+}
+# Without the puff of air, an American listener hears the voiced sound instead.
+UNASPIRATED_PAIRS = {"P": "pin → bin", "T": "time → dime", "K": "coat → goat"}
+IMPACT_WHY = {
+    HIGH: "This can change the word you meant, so fix it first.",
+    MEDIUM: "People will understand you, but this is one of the most noticeable parts of an accent.",
+    LOW: "A finishing touch: you'll be understood either way, but this makes you sound more American.",
+}
+
+
+# Ranking points per occurrence: one word-changing mistake outweighs a noticeable one heard
+# twice, but not one heard three times.
+POINTS = {HIGH: 3.0, MEDIUM: 1.4, LOW: 0.5}
+
+
+# Short grammar words Americans reduce in connected speech ("at" → ət, "and" → an', "of" → ə):
+# a mistake in one of these never comes first.
+FUNCTION_WORDS = {
+    "a", "an", "the", "and", "or", "but", "of", "to", "at", "in", "on", "for", "from", "with", "as",
+    "is", "was", "are", "were", "be", "been", "am", "has", "have", "had", "do", "does", "can", "could",
+    "will", "would", "should", "must", "it", "its", "he", "him", "his", "her", "she", "them", "they",
+    "their", "we", "us", "you", "your", "me", "my", "i", "that", "than", "then", "there", "some", "just",
+}
+
+
+def _impact(exp: str, got: str, word: str = "", final: bool = False) -> int:
+    """How much one mistake matters (HIGH / MEDIUM / LOW). `exp` may carry its stress digit:
+    unstressed vowels matter less (the "cut / cot" contrast is a stressed-vowel one, and a
+    dropped unstressed vowel is normal reduction). `final`: the sound ends `word`."""
+    if word.lower() in FUNCTION_WORDS:
+        return LOW
+    unstressed = exp[-1:] == "0"
+    exp = base(exp) if exp != "+" else exp
+    if got == "-":  # dropped: a missing consonant changes words (walked → walk)
+        if unstressed or exp in {"Y", "HH"}:  # "the" → th', "particular" → partic'lar, "him" → 'im
+            return LOW
+        if exp in KNOWN_DROPS or (final and exp in {"T", "D"}):  # "last time" → las' time
+            return MEDIUM
+        return HIGH
+    impact = IMPACT.get((exp, got), MEDIUM)  # MEDIUM: extra sounds, TH, the R, anything not listed
+    return min(impact, MEDIUM) if unstressed else impact
+
+
+def _impact_why(exp: str, got: str, impact: int) -> str:
+    pair = MINIMAL_PAIRS.get((exp, got))
+    if pair and impact == HIGH:
+        a, b = pair.split(" → ")
+        return f"This changes the word: “{a}” can sound like “{b}”."
+    if got.endswith("˭") and exp in UNASPIRATED_PAIRS:
+        a, b = UNASPIRATED_PAIRS[exp].split(" → ")
+        return f"Without the puff of air, Americans can hear “{a}” as “{b}”."
+    if got == "-" and impact == HIGH:
+        return "Dropping a sound can change the word (walked → walk), so fix it first."
+    return IMPACT_WHY[impact]
+
+
 def _pair_tip(exp: str, heard: str) -> str | None:
     return PAIR_TIPS.get((base(exp), heard))
 
@@ -288,7 +370,17 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
         _apply_acoustics(ops, chosen, measure(chosen, words))
 
     word_results = []
-    issue_counter: Counter[tuple[str, str]] = Counter()
+    # pattern -> {"count", "weight" (a "possible" mistake counts half), "words": [word index]}
+    seen: dict[tuple[str, str], dict] = {}
+
+    def note(key: tuple[str, str], o: Op, wi: int, impact: int) -> None:
+        entry = seen.setdefault(key, {"count": 0, "points": 0.0, "impact": LOW, "confirmed": False, "words": []})
+        entry["count"] += 1
+        entry["points"] += POINTS[impact] * (0.5 if o.confidence == "possible" else 1.0)
+        entry["impact"] = max(entry["impact"], impact)
+        entry["confirmed"] |= o.confidence != "possible"
+        if wi not in entry["words"]:
+            entry["words"].append(wi)
     for wi, p in enumerate(prons):
         w_ops = [o for o in ops if o.word == wi]
         info = p.describe()
@@ -305,8 +397,9 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
             if o.kind == "ins":
                 tip = _insertion_tip(o.heard, w_ops, at_end=k > last_exp_idx)
                 if tip and o.severity != "ok":
-                    issues.append({"type": "extra", "severity": o.severity, "confidence": o.confidence, "heard": o.heard.ipa, "tip": tip})
-                    issue_counter[("+", o.heard.unit)] += 1
+                    issues.append({"type": "extra", "severity": o.severity, "confidence": o.confidence, "heard": o.heard.ipa,
+                                   "tip": tip, "impact": _impact("+", o.heard.unit, p.word)})
+                    note(("+", o.heard.unit), o, wi, issues[-1]["impact"])
                 phones_view.append({"expected": "", "heard": o.heard.ipa, "status": "extra" if o.severity != "ok" else "ok",
                                     "expected_say": "", "expected_example": None,
                                     **_sound_view(unit_name(o.heard.unit), "heard")})
@@ -322,8 +415,9 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
                 tip = _deletion_tip(o.expected, is_final=k == last_exp_idx)
                 if o.severity == "accent" and base(o.expected) == "DH":
                     tip = "The TH blended into the previous sound. That's common in fast speech, but saying the 'th' clearly sounds more careful."
-                issues.append({"type": "missing", "severity": o.severity, "confidence": o.confidence, "expected": exp_ipa, "tip": tip})
-                issue_counter[(base(o.expected), "-")] += 1
+                issues.append({"type": "missing", "severity": o.severity, "confidence": o.confidence, "expected": exp_ipa,
+                               "tip": tip, "impact": _impact(o.expected, "-", p.word, final=k == last_exp_idx)})
+                note((base(o.expected), "-"), o, wi, issues[-1]["impact"])
                 phones_view.append({"expected": exp_ipa, "heard": "", "status": "missing", **exp_view,
                                     "heard_say": "", "heard_example": None})
                 continue
@@ -341,10 +435,13 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
             issues.append({
                 "type": "substitution", "severity": o.severity, "confidence": o.confidence,
                 "expected": exp_ipa, "heard": heard_ipa, "tip": tip,
+                "impact": _impact(o.expected, o.heard.unit, p.word),
             })
-            issue_counter[(base(o.expected), o.heard.unit)] += 1
+            note((base(o.expected), o.heard.unit), o, wi, issues[-1]["impact"])
             phones_view.append({"expected": exp_ipa, "heard": heard_ipa, "status": o.severity, **exp_view, **heard_view})
 
+        # Biggest problem first; confirmed before "possible".
+        issues.sort(key=lambda x: (x["confidence"] == "possible", -x["impact"]))
         heard_seq = [o.heard for o in w_ops if o.heard is not None]
         word_results.append({
             **info,
@@ -360,8 +457,16 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
     scored = [w for w in word_results if w["score"] is not None]
     overall = round(sum(w["score"] for w in scored) / len(scored)) if scored else 0
 
+    # Rank by how much each mistake matters times how often it happened, so the first one is
+    # what a coach would pick to work on. Confirmed mistakes come before ones only one
+    # recognizer heard.
+    def priority(item):
+        (exp, got), e = item
+        return (e["confirmed"], e["points"], e["impact"], e["count"])
+
     patterns = []
-    for (exp, got), count in issue_counter.most_common(6):
+    for (exp, got), e in sorted(seen.items(), key=priority, reverse=True)[:6]:
+        count = e["count"]
         if exp == "+":
             label, label_ipa = f"extra {_say_unit(got)}", f"extra /{_unit_ipa(got)}/"
         elif got == "-":
@@ -376,7 +481,11 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
         tip = tip[:1].upper() + tip[1:]  # some PHONE_TIPS start lowercase ("voiced TH ...")
         if got == "-":
             tip = _deletion_tip(exp + "1", is_final=False)
-        patterns.append({"label": label, "label_ipa": label_ipa, "count": count, "tip": tip})
+        impact = e["impact"]
+        patterns.append({"label": label, "label_ipa": label_ipa, "count": count, "tip": tip,
+                         "impact": {HIGH: "high", MEDIUM: "medium", LOW: "low"}[impact],
+                         "why": _impact_why(exp, got, impact), "confirmed": e["confirmed"],
+                         "words": [{"index": wi, "word": words[wi]} for wi in e["words"]]})
 
     return {
         "text": " ".join(words),

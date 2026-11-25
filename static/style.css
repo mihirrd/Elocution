@@ -285,6 +285,19 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .notes li { margin-bottom: 6px; padding-left: 22px; text-indent: -22px; }
 .notes li::before { content: "☞"; color: var(--rubric); display: inline-block; width: 22px; text-indent: 0; }
 
+/* ---------- Fix this first ---------- */
+.focus { margin: 24px 0 4px; padding: 16px 18px 14px; border: 1px solid #d3aca1; border-left: 4px solid var(--rubric); background: #fffdf8; }
+.focus .label { color: var(--rubric); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; }
+.focus-title { margin: 0; font-size: 21px; font-weight: 600; font-style: italic; }
+.focus-title .pc { font-weight: 400; font-size: 15px; margin-left: 6px; }
+.focus-why { margin: 6px 0 0; color: var(--ink-soft); }
+.focus-tip { margin: 10px 0 0; }
+.focus-words { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.focus .pc { color: var(--ink-faint); font-style: italic; }
+.focus-words .mini { text-transform: none; letter-spacing: 0; font-size: 15px; font-style: italic; margin: 0; }
+.impact { font-size: 12px; font-style: normal; font-weight: 400; color: var(--ink-faint); }
+.impact.high { color: var(--rubric); }
+
 /* ---------- Recurring errata ---------- */
 .errata { margin: 0; padding: 0; list-style: none; counter-reset: errata; }
 .errata li { display: grid; grid-template-columns: 34px minmax(130px, 220px) 1fr; gap: 4px 14px; padding: 12px 0; border-top: 1px solid var(--rule-soft); counter-increment: errata; }

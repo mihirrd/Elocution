@@ -230,15 +230,43 @@ function renderResults(d) {
     chips.appendChild(b);
   });
 
+  // Patterns arrive ranked by how much they matter: the first confirmed one is the focus.
   const pats = d.patterns || [];
-  $("patterns-box").hidden = pats.length === 0;
-  $("patterns").innerHTML = pats
-    .map((p) => `<li><span class="pl">${esc(p.label)}<span class="ipa pc"><br>${esc(p.label_ipa)}</span></span><span>${esc(p.tip)}${p.count > 1 ? ` <span class="pc">×${p.count}</span>` : ""}</span></li>`)
+  const focus = pats.length && pats[0].confirmed ? pats[0] : null;
+  const rest = focus ? pats.slice(1) : pats;
+  renderFocus(focus);
+  $("patterns-box").hidden = rest.length === 0;
+  $("patterns").innerHTML = rest
+    .map((p) => `<li><span class="pl">${esc(p.label)}<span class="ipa pc"><br>${esc(p.label_ipa)}</span><br><span class="impact ${p.impact}">${IMPACT_LABEL[p.impact]}</span></span><span>${esc(p.tip)}${p.count > 1 ? ` <span class="pc">×${p.count}</span>` : ""}</span></li>`)
     .join("");
 
+  // Open the word that shows the focus mistake; without one, the lowest-scoring word.
   const worst = d.words.reduce((best, w, i) => (w.score != null && (best < 0 || w.score < d.words[best].score) ? i : best), -1);
-  if (worst >= 0 && d.words[worst].score < 85) selectWord(worst);
+  if (focus) selectWord(focus.words[0].index);
+  else if (worst >= 0 && d.words[worst].score < 85) selectWord(worst);
   else $("word-detail").hidden = true;
+}
+
+const IMPACT_LABEL = { high: "Changes words", medium: "Very noticeable", low: "Finishing touch" };
+
+function renderFocus(p) {
+  const box = $("focus");
+  box.hidden = !p;
+  if (!p) return;
+  const words = p.words
+    .map((w) => `<button class="mini" data-word="${w.index}">${esc(w.word)}</button>`)
+    .join(" ");
+  box.innerHTML = `
+    <div class="label">Fix this first</div>
+    <p class="focus-title">${esc(p.label)} <span class="ipa pc">${esc(p.label_ipa)}</span></p>
+    <p class="focus-why">${esc(p.why)}</p>
+    <p class="focus-tip">${esc(p.tip)}</p>
+    <div class="focus-words"><span class="pc">${p.words.length === 1 ? "In" : "In these words"}:</span> ${words}</div>`;
+  box.querySelectorAll("[data-word]").forEach((b) =>
+    b.addEventListener("click", () => {
+      selectWord(+b.dataset.word);
+      $("word-detail").scrollIntoView({ behavior: "smooth", block: "start" });
+    }));
 }
 
 /* Word clips play from the exact audio the server analyzed (same timeline as the word
