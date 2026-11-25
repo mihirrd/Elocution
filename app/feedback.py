@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from .align import Op, align, best_variant, combine
-from .lexicon import WordPron, american_surface, base, phone_ipa, pronounce, sound_name, stress, to_ipa
+from .lexicon import WordPron, american_surface, base, glottal_t, is_vowel, phone_ipa, pronounce, sound_name, stress, to_ipa
 from .phones import NON_AMERICAN_R, Heard, heard_respelling, unit_name
 
 # Tips for specific (expected, heard) confusions. Heard keys are ARPAbet, or "~ipa" for
@@ -21,7 +21,7 @@ PAIR_TIPS: dict[tuple[str, str], str] = {
     ("W", "V"): "That sounded like V. For W, don't touch the teeth: round the lips into a small circle ('oo') and open them quickly.",
     ("R", "L"): "That sounded like L. For R, the tongue tip must NOT touch the roof of the mouth; pull it back and round the lips a little.",
     ("L", "R"): "That sounded like R. For L, press the tongue tip firmly on the ridge behind the upper teeth.",
-    ("R", "~r"): "This wasn't an American R: it didn't have the R sound Americans make (your tongue tip probably touched the roof of the mouth, or stayed flat). Pull the tongue tip back so it touches nothing (or bunch the whole tongue up and back), round the lips slightly, and hold it, like the start of 'grrr'.",
+    ("R", "~r"): "Not an American R. Pull your tongue tip back so it touches nothing, round your lips a little, and hold it, like 'grrr'.",
     ("R", "~ɾ"): "Your R was tapped: the tongue tip flicked the ridge behind your teeth once, like a quick D. The American R has no tongue contact at all: curl the tip back (or bunch the tongue), round the lips slightly, and hold it.",
     ("R", "~ʁ"): "Your R came from the throat. Make the American R with the front of the tongue curled back, not with the back of the throat.",
     ("R", "~ɽ"): "Your R was a flapped retroflex sound. Keep the tongue from touching anything and hold the R as a smooth glide.",
@@ -263,15 +263,18 @@ CLEAR_L_COST = 0.45
 VW_COST = 0.6  # V/W confusion changes words (vest / west), so it counts as an error
 
 
-def _apply_acoustics(ops: list[Op], chosen: list[tuple[int, str]], m: dict[str, dict[int, float]]) -> None:
+def _apply_acoustics(ops: list[Op], chosen: list[tuple[int, str]], m: dict[str, dict[int, float]],
+                     weak_words: frozenset[int] = frozenset()) -> None:
     """Let the acoustic measurements (see acoustics.py) overrule the recognizers on the
     features they can't hear: R color, aspiration of P / T / K, the dark L, and V / W."""
-    from .acoustics import CLEAR_L, CLEAR_R, DARK_L, GOP_FLAG, NO_R_COLOR, UNASPIRATED
+    from .acoustics import CLEAR_L, CLEAR_R, DARK_L, GOP_FLAG, NO_R_COLOR, NO_R_COLOR_AFTER_TD, UNASPIRATED
 
     pos = {}
     for i, (wi, _) in enumerate(chosen):
         pos[i] = (wi, sum(1 for w, _ in chosen[:i] if w == wi))
     ratio_at = {pos[i]: r for i, r in m.get("r_color", {}).items()}
+    no_r_at = {pos[i]: NO_R_COLOR_AFTER_TD if i > 0 and chosen[i - 1][0] == chosen[i][0]
+               and base(chosen[i - 1][1]) in {"T", "D"} else NO_R_COLOR for i in m.get("r_color", {})}
     vot_at = {pos[i]: v for i, v in m.get("vot", {}).items()}
     l_at = {pos[i]: v for i, v in m.get("l_f2", {}).items()}
     gop_at = {pos[i]: v for i, v in m.get("vw_gop", {}).items()}
@@ -297,7 +300,7 @@ def _apply_acoustics(ops: list[Op], chosen: list[tuple[int, str]], m: dict[str, 
         if ratio is not None and ratio <= CLEAR_R:
             if b == "R" and h.unit in NON_AMERICAN_R:
                 o.kind, o.cost, o.heard = "match", 0.0, Heard("R", "ɹ", h.start, h.end)
-        elif ratio is not None and ratio >= NO_R_COLOR:
+        elif ratio is not None and ratio >= no_r_at[(o.word, o.pos)]:
             if b == "R" and (o.severity == "ok" or h.unit in NON_AMERICAN_R):
                 ipa = h.ipa if h.unit in NON_AMERICAN_R else "r"
                 o.kind, o.cost, o.confidence = "sub", NO_R_COLOR_COST, "confirmed"
@@ -311,10 +314,74 @@ def _apply_acoustics(ops: list[Op], chosen: list[tuple[int, str]], m: dict[str, 
             o.kind, o.cost, o.confidence = "sub", VW_COST, "confirmed"
             o.heard = Heard("~ʋ", "ʋ", h.start, h.end)
         vot = vot_at.get((o.word, o.pos))
-        if b in UNASPIRATED and vot is not None and vot <= UNASPIRATED[b] and o.severity == "ok":
+        if (b in UNASPIRATED and vot is not None and vot <= UNASPIRATED[b] and o.severity == "ok"
+                and o.word not in weak_words):  # "can", "to", "could": unstressed, barely aspirated
             sym = b.lower() + "˭"
             o.kind, o.cost, o.confidence = "sub", UNASPIRATED_COST, "confirmed"
             o.heard = Heard("~" + sym, sym, h.start, h.end)
+
+
+H_WORDS = {"he", "his", "him", "her", "hers", "have", "has", "had"}
+YOU_WORDS = {"you", "your", "yours", "yourself"}
+
+
+def _accept(o: Op) -> None:
+    o.cost = 0.0
+    if o.kind == "sub":
+        o.kind = "match"
+
+
+def _accept_connected_speech(ops: list[Op], words: list[str], prons: list[WordPron]) -> None:
+    """Don't count what Americans do in connected speech as mistakes:
+      - "written", "certain": a glottal T (or none) and no vowel before the N ("wri'n")
+      - weak forms of grammar words: "can" → kən, "at" → ət, "for" → fər
+      - H dropped from he / his / him / her / have / has / had inside a sentence ("tell'im")
+      - a final T (or a T / D after a consonant) dropped before a consonant ("righ' there", "an' then")
+      - T / D + "you" merged into ch / j ("don't you" → donchu, "did you" → didja)"""
+    def first(wi):
+        return base(prons[wi].phones[0]) if 0 <= wi < len(prons) and prons[wi].phones else None
+
+    def ends_td(wi):  # by spelling too: "don't" may have been scored as its variant "D OW N"
+        if wi < 0:
+            return False
+        return words[wi].lower().endswith(("t", "d")) or (
+            bool(prons[wi].phones) and base(prons[wi].phones[-1]) in {"T", "D"})
+
+    for o in ops:
+        if o.severity == "ok" or o.word < 0 or not prons[o.word].phones:
+            continue
+        wi, phones, k = o.word, prons[o.word].phones, o.pos
+        w = words[wi].lower()
+        nxt = first(wi + 1)
+        if o.kind == "ins":
+            # the ch / j of "don't you", "did you", heard as an extra sound
+            if o.heard.unit in {"CH", "JH", "T", "D", "Y", "SH", "ZH"} and (
+                    (w in YOU_WORDS and ends_td(wi - 1))
+                    or (words[wi + 1].lower() in YOU_WORDS if wi + 1 < len(words) else False)):
+                _accept(o)
+            continue
+        if k < 0 or k >= len(phones):
+            continue
+        b = base(phones[k])
+        last = k == len(phones) - 1
+        if glottal_t(phones, k) and (o.kind == "del" or o.heard.unit in {"T", "Q", "D", "DX"}):
+            _accept(o)  # written: T, a glottal stop, or nothing
+        elif k >= 1 and glottal_t(phones, k - 1) and o.kind == "del":
+            _accept(o)  # written: no vowel before the N
+        elif w in FUNCTION_WORDS and is_vowel(phones[k]) and b != "ER" and o.kind == "sub" and (
+                o.heard.unit in {"AH", "IH", "UH"} or (o.heard.unit == "ER" and k + 1 < len(phones) and base(phones[k + 1]) == "R")):
+            _accept(o)  # weak form: can → kən, at → ət, for → fər
+        elif b == "HH" and k == 0 and w in H_WORDS and wi > 0 and o.kind == "del":
+            _accept(o)  # tell him → tell'im
+        elif last and o.kind == "del" and nxt is not None and not is_vowel(nxt) and (
+                b == "T" or (b == "D" and k > 0 and not is_vowel(phones[k - 1]))):
+            _accept(o)  # right there → righ' there, and then → an' then
+        elif last and b in {"T", "D"} and wi + 1 < len(words) and words[wi + 1].lower() in YOU_WORDS and (
+                o.kind == "del" or o.heard.unit in {"CH", "JH", "SH", "ZH"}):
+            _accept(o)  # don't you → donchu
+        elif k == 0 and b == "Y" and w in YOU_WORDS and ends_td(wi - 1) and (
+                o.kind == "del" or o.heard.unit in {"CH", "JH", "SH", "ZH"} or o.heard.ipa in {"tj", "dj", "tʃ", "dʒ"}):
+            _accept(o)  # did you → didja
 
 
 def _heard_ipa(op: Op) -> str:
@@ -367,7 +434,10 @@ def analyze(text: str, heard: list[Heard], words: list[str] | None = None,
         _promote_likely_real(ops)
     if measure is not None and expected:
         chosen = [(wi, ph) for wi, p in enumerate(prons) if p.phones for ph in p.phones]
-        _apply_acoustics(ops, chosen, measure(chosen, words))
+        weak = frozenset(wi for wi, w in enumerate(words) if w.lower() in FUNCTION_WORDS)
+        _apply_acoustics(ops, chosen, measure(chosen, words), weak)
+    if expected:
+        _accept_connected_speech(ops, words, prons)
 
     word_results = []
     # pattern -> {"count", "weight" (a "possible" mistake counts half), "words": [word index]}

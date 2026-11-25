@@ -23,6 +23,9 @@ from .segment import _token_ids, forced_align
 # F3 during R / ER as a fraction of the speaker's median vowel F3.
 CLEAR_R = 0.80     # at or below: a clear American R
 NO_R_COLOR = 0.84  # at or above: the American R quality is missing
+# Right after T / D ("interesting", "try", "drive") the R starts voiceless and F3 reads higher
+# even in native speech (CMU ARCTIC: 5 of 29 American TR / DR over 0.84, 3 over 0.87).
+NO_R_COLOR_AFTER_TD = 0.87
 
 # Voice onset time of P / T / K before a stressed vowel, in milliseconds.
 # F2 during an L after a vowel ("feel", "milk", "all") as a fraction of the speaker's median

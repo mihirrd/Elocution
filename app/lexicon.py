@@ -171,6 +171,18 @@ def all_pronunciations(word: str) -> list[list[str]]:
     return [list(p) for p in _dict().get(word.lower(), [])]
 
 
+def glottal_t(phones: list[str], i: int) -> bool:
+    """Whether phones[i] is a T before an unstressed vowel + N that ends the word or a
+    syllable: "written", "certain", "mountain", "forgotten". Americans say it as a glottal stop
+    with no vowel after it ("wri'n"), not as a flap."""
+    if base(phones[i]) != "T" or i == 0 or i + 2 >= len(phones) or base(phones[i - 1]) == "S":
+        return False
+    v, n = phones[i + 1], phones[i + 2]
+    after = phones[i + 3] if i + 3 < len(phones) else None
+    return (base(v) in {"AH", "IH"} and stress(v) == 0 and base(n) == "N"
+            and (after is None or not is_vowel(after)))
+
+
 def american_surface(phones: list[str]) -> list[str]:
     """Apply the American flap rule: T/D between a vowel (or R) and an unstressed vowel -> DX.
 
@@ -183,7 +195,7 @@ def american_surface(phones: list[str]) -> list[str]:
             prev_ok = is_vowel(prev) or base(prev) == "R"
             # A word-final "-y" counts as unstressed even when marked secondary (thirty, forty).
             weak = stress(nxt) == 0 or (stress(nxt) == 2 and base(nxt) == "IY" and i + 1 == len(out) - 1)
-            if prev_ok and is_vowel(nxt) and weak:
+            if prev_ok and is_vowel(nxt) and weak and not glottal_t(out, i):
                 out[i] = "DX"
     return out
 

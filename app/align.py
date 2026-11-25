@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lexicon import base, is_vowel
+from .lexicon import base, glottal_t, is_vowel
 from .phones import NON_AMERICAN_R, Heard, deletion_cost, reported_deletion_cost, insertion_cost, is_vowel_unit, rhotic_pair_cost, substitution_cost
 
 
@@ -104,6 +104,10 @@ def _sub_context(expected: list[tuple[int, str]], i: int) -> tuple[str | None, b
         and (is_vowel(prv[1]) or base(prv[1]) == "R") and is_vowel(nxt[1])
         and (nxt[0] != w or nxt[1].endswith("0"))
     )
+    if flap_ok:
+        start = next(k for k in range(i, -1, -1) if k == 0 or expected[k - 1][0] != w)
+        word = [p for ww, p in expected if ww == w]
+        flap_ok = not glottal_t(word, i - start)
     return next_in_word, flap_ok
 
 

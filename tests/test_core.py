@@ -381,3 +381,32 @@ def test_impact_ranks_word_changing_mistakes_first():
     assert _impact("K", "-", "walked") == HIGH        # dropped consonant changes the word
     assert _impact("T", "-", "last", final=True) == MEDIUM
     assert _impact("AH0", "-", "about") == LOW
+
+
+def _issues(text, *tokens, measure=None):
+    res = analyze(text, heard(*tokens), detail_heard=heard(*tokens), measure=measure)
+    return {w["word"]: [x["tip"][:40] for x in w["issues"]] for w in res["words"]}
+
+
+def test_connected_speech_is_not_a_mistake():
+    assert _issues("written", "ɹ", "ɪ", "ʔ", "n") == {"written": []}           # glottal T, no vowel
+    assert _issues("written", "ɹ", "ɪ", "t", "ə", "n") == {"written": []}      # careful T is fine too
+    assert _issues("tell him", "t", "ɛ", "l", "ɪ", "m")["him"] == []           # tell'im
+    assert _issues("right there", "ɹ", "aɪ", "ð", "ɛ", "ɹ")["right"] == []     # righ' there
+    assert _issues("don't you", "d", "oʊ", "n", "tʃ", "u") == {"don't": [], "you": []}
+    assert _issues("I can see", "aɪ", "k", "ə", "n", "s", "i",                # kən, barely aspirated
+                   measure=_vots(i1=10))["can"] == []
+
+
+def test_connected_speech_rules_stay_narrow():
+    assert _issues("he can", "i", "k", "ɛ", "n")["he"]                        # sentence start: H needed
+    assert _issues("right", "ɹ", "aɪ")["right"]                                # nothing follows: T needed
+    assert _issues("I can't see", "aɪ", "k", "ə", "n", "t", "s", "i")["can't"]  # can't keeps its vowel
+
+
+def test_r_after_t_needs_stronger_evidence():
+    # "try" = T R AY: after T the R starts voiceless, so 0.855 isn't enough to call it non-American.
+    assert analyze("try", heard("t", "ɹ", "aɪ"), detail_heard=heard("t", "ɹ", "aɪ"),
+                   measure=_ratios(i1=0.855))["words"][0]["issues"] == []
+    assert analyze("try", heard("t", "ɹ", "aɪ"), detail_heard=heard("t", "ɹ", "aɪ"),
+                   measure=_ratios(i1=0.95))["words"][0]["issues"]
