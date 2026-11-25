@@ -78,6 +78,8 @@ h1 {
 }
 h1 .tagline { display: block; font-size: .5em; font-weight: 400; color: var(--ink-faint); letter-spacing: .02em; margin-top: 4px; }
 .credit { text-align: center; font-size: 13px; color: var(--ink-faint); padding: 0 16px 28px; }
+.intro { max-width: 660px; margin: 14px auto 0; color: var(--ink-soft); font-style: italic; font-size: 17px; line-height: 1.5; }
+.intro + .intro { margin-top: 8px; }
 .masthead-meta { display: flex; justify-content: center; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 15px; color: var(--ink-soft); margin-top: 6px; }
 .status { font-size: 11px; }
 .status.loading { color: var(--fair); }
